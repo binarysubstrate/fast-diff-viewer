@@ -1,0 +1,31 @@
+name: CI Markdown
+
+on:
+  workflow_call:
+  pull_request:
+
+concurrency:
+  group: ci-markdown-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  markdownlint:
+    name: markdownlint-cli2
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install Node dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: markdownlint-cli2
+        run: pnpm run lint:md

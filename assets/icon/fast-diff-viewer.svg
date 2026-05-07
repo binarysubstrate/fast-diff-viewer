@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Fast Diff Viewer brand mark - canonical vector master.
+
+  This SVG is the source-of-truth the human edits. It mirrors
+  `draw_brand_mark` in src/main.rs: a rounded square split along the
+  anti-diagonal (top-right to bottom-left), upper-left half painted in
+  `removed_inline`, lower-right triangle in `added_inline`, with a
+  1px hairline ring in `ink` at ~15% opacity.
+
+  Shell-icon colorway is locked to the Graphite (shipping default)
+  theme's inline-emphasis pair so the mark reads identically in
+  Explorer, taskbar, and Alt-Tab regardless of the user's Windows
+  theme. The in-app brand mark remains theme-reactive; only the PE /
+  window icon is fixed by this asset.
+
+  Geometry proportions (all in a 256x256 viewBox):
+    corner radius   = 48   (256 * 48/256, matches draw_brand_mark)
+    ring width      = 1
+    ring inset      = 0.5  (centered on the outer boundary)
+    hairline color  = #E6E1D6 (Graphite ink) @ 15% opacity
+
+  If the diagonal-split geometry or the Graphite palette changes,
+  update this SVG, rerun `cargo run --example gen_icon --release`
+  (source: `scripts/gen_icon.rs`)
+  to regenerate `fast-diff-viewer.ico` and `window_icon.rgba.bin`, then
+  commit the regenerated binary assets alongside the source.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <clipPath id="rounded">
+      <rect x="0" y="0" width="256" height="256" rx="48" ry="48"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#rounded)">
+    <rect x="0" y="0" width="256" height="256" fill="#A0384A"/>
+    <polygon points="256,0 256,256 0,256" fill="#316D4C"/>
+  </g>
+  <rect x="0.5" y="0.5" width="255" height="255" rx="47.5" ry="47.5"
+        fill="none" stroke="#E6E1D6" stroke-opacity="0.15" stroke-width="1"/>
+</svg>

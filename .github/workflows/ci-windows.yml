@@ -1,0 +1,54 @@
+name: CI Windows
+
+on:
+  workflow_call:
+  pull_request:
+
+concurrency:
+  group: ci-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-gates:
+    name: Windows x64 quality gates
+    runs-on: windows-latest
+    env:
+      CARGO_TERM_COLOR: always
+      RUSTFLAGS: -D warnings
+
+    steps:
+      - uses: actions/checkout@v6
+
+      # Keep in sync with `rust-version` in Cargo.toml.
+      - name: Install Rust 1.94.1 (repo target)
+        uses: dtolnay/rust-toolchain@1.94.1
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry / git / target
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-cargo-ci-${{ hashFiles('Cargo.lock', 'Cargo.toml') }}
+          restore-keys: windows-cargo-ci-
+
+      - name: rustfmt --check
+        run: cargo fmt --all -- --check
+
+      - name: clippy (all targets / all features, -D warnings)
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+
+      - name: cargo test --release
+        run: cargo test --release --locked
+
+      - name: cargo test --release --features bench
+        run: cargo test --release --locked --features bench
+
+      - name: cargo build --release
+        run: cargo build --release --locked
+
+      - name: cargo build --release --features bench
+        run: cargo build --release --locked --features bench

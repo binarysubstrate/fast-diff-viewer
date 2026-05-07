@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "label": "post-pbi-final-verification-3run",
+  "date": "2026-05-04",
+  "date_source": "benchmark_run_timestamp",
+  "commit": "legacy",
+  "short_commit": "legacy",
+  "source_commit": "legacy",
+  "source_path": "bench/results",
+  "migrated_from": null,
+  "version": "1.6.0",
+  "rust_version": "rustc 1.94.1 (e408947bf 2026-03-25)\nbinary: rustc\ncommit-hash: e408947bfd200af42db322daf0fadfe7e26d3bd1\ncommit-date: 2026-03-25\nhost: x86_64-pc-windows-msvc\nrelease: 1.94.1\nLLVM version: 21.1.8",
+  "target": "x86_64-pc-windows-msvc",
+  "command": "cargo run --release --example bench_runner -- --scenario all --out-dir bench/results --skip-rammap",
+  "gate_mode": "SkipRamMap",
+  "machine_note": "reference workstation",
+  "notes": "Recorded benchmark history entry"
+}

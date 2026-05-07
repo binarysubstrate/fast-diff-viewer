@@ -1,0 +1,33 @@
+# Third-Party Notices
+
+This file lists third-party packages included in Fast Diff Viewer binary
+release builds. It is generated from `Cargo.lock` by `cargo-about 0.9.0`.
+
+## Packages
+
+| Package | Version | License |
+| --- | --- | --- |
+{{#each crates}}
+{{#if package.source}}
+| {{package.name}} | {{package.version}} | {{license}} |
+{{/if}}
+{{/each}}
+
+## License Texts
+
+{{#each licenses}}
+### {{name}}
+
+Used by:
+
+{{#each used_by}}
+{{#if crate.source}}
+- {{crate.name}} {{crate.version}}
+{{/if}}
+{{/each}}
+
+<pre>
+{{text}}
+</pre>
+
+{{/each}}

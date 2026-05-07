@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]*"
+
+permissions:
+  contents: read
+
+jobs:
+  ci-windows:
+    name: CI Windows
+    uses: ./.github/workflows/ci-windows.yml
+
+  ci-ubuntu-22-04:
+    name: CI Ubuntu 22.04
+    uses: ./.github/workflows/ci-ubuntu-22.04.yml
+
+  ci-ubuntu-24-04:
+    name: CI Ubuntu 24.04
+    uses: ./.github/workflows/ci-ubuntu-24.04.yml
+
+  ci-macos-26:
+    name: CI macOS 26
+    uses: ./.github/workflows/ci-macos-26.yml
+
+  ci-markdown:
+    name: CI Markdown
+    uses: ./.github/workflows/ci-markdown.yml
+
+  build-windows:
+    name: Build Windows release artifact
+    needs: [ci-windows, ci-ubuntu-22-04, ci-ubuntu-24-04, ci-macos-26, ci-markdown]
+    uses: ./.github/workflows/release-build-windows.yml
+
+  build-ubuntu-22-04:
+    name: Build Ubuntu 22.04 release artifact
+    needs: [ci-windows, ci-ubuntu-22-04, ci-ubuntu-24-04, ci-macos-26, ci-markdown]
+    uses: ./.github/workflows/release-build-ubuntu-22.04.yml
+
+  build-ubuntu-24-04:
+    name: Build Ubuntu 24.04 release artifact
+    needs: [ci-windows, ci-ubuntu-22-04, ci-ubuntu-24-04, ci-macos-26, ci-markdown]
+    uses: ./.github/workflows/release-build-ubuntu-24.04.yml
+
+  build-macos-26:
+    name: Build macOS 26 release artifact
+    needs: [ci-windows, ci-ubuntu-22-04, ci-ubuntu-24-04, ci-macos-26, ci-markdown]
+    uses: ./.github/workflows/release-build-macos-26.yml
+
+  publish:
+    name: Publish GitHub Release
+    needs: [build-windows, build-ubuntu-22-04, build-ubuntu-24-04, build-macos-26]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List release artifacts
+        run: ls -la dist
+
+      - name: Generate SHA-256 checksums
+        run: |
+          cd dist
+          sha256sum \
+            fast-diff-viewer-windows-x64.zip \
+            fast-diff-viewer-ubuntu-22.04-x64.tar.gz \
+            fast-diff-viewer-ubuntu-24.04-x64.tar.gz \
+            fast-diff-viewer-macos-26-arm64.tar.gz \
+            > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create GitHub Release and upload artifacts
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            dist/fast-diff-viewer-windows-x64.zip \
+            dist/fast-diff-viewer-ubuntu-22.04-x64.tar.gz \
+            dist/fast-diff-viewer-ubuntu-24.04-x64.tar.gz \
+            dist/fast-diff-viewer-macos-26-arm64.tar.gz \
+            dist/SHA256SUMS.txt \
+            --title "${{ github.ref_name }}" \
+            --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}

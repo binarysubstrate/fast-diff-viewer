@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Fast Diff Viewer
+Comment=Compare text side by side
+Exec=fast-diff-viewer
+Icon=fast-diff-viewer
+Terminal=false
+Categories=Development;Utility;

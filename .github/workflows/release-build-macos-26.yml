@@ -1,0 +1,119 @@
+name: Release Build macOS 26
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    name: Build macOS 26 arm64 release artifact
+    runs-on: macos-26
+    permissions:
+      contents: read
+    env:
+      CARGO_ABOUT_VERSION: 0.9.0
+      CARGO_TERM_COLOR: always
+      RELEASE_ASSET_NAME: fast-diff-viewer-macos-26-arm64.tar.gz
+      RELEASE_TARGET: aarch64-apple-darwin
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust 1.94.1
+        uses: dtolnay/rust-toolchain@1.94.1
+        with:
+          targets: ${{ env.RELEASE_TARGET }}
+
+      - name: Cache cargo registry / git / target
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: macos-26-cargo-release-${{ hashFiles('Cargo.lock', 'Cargo.toml') }}
+          restore-keys: macos-26-cargo-release-
+
+      - name: Install cargo-about 0.9.0
+        run: cargo install cargo-about --version "$CARGO_ABOUT_VERSION" --features cli --locked --force
+
+      - name: Fetch release dependency graph
+        run: cargo fetch --locked
+
+      - name: Build release binary
+        run: cargo build --release --locked --target "$RELEASE_TARGET"
+
+      - name: Stage macOS 26 release artifact
+        run: |
+          VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+          APP_BUNDLE="$RUNNER_TEMP/release/Fast Diff Viewer.app"
+          CONTENTS="$APP_BUNDLE/Contents"
+          MACOS="$CONTENTS/MacOS"
+          RESOURCES="$CONTENTS/Resources"
+          ICONSET="$RUNNER_TEMP/FastDiffViewer.iconset"
+
+          mkdir -p "$MACOS" "$RESOURCES" "$ICONSET"
+          cp LICENSE-MIT "$RUNNER_TEMP/release/LICENSE-MIT"
+          cp LICENSE-APACHE "$RUNNER_TEMP/release/LICENSE-APACHE"
+          cargo about generate legal/third-party-notices.hbs --config legal/about.toml --locked --offline --fail --output-file "$RUNNER_TEMP/release/THIRD-PARTY-NOTICES.md"
+          cp "target/$RELEASE_TARGET/release/fast-diff-viewer" "$MACOS/fast-diff-viewer"
+          chmod +x "$MACOS/fast-diff-viewer"
+
+          cat > "$CONTENTS/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleDevelopmentRegion</key>
+            <string>en</string>
+            <key>CFBundleDisplayName</key>
+            <string>Fast Diff Viewer</string>
+            <key>CFBundleExecutable</key>
+            <string>fast-diff-viewer</string>
+            <key>CFBundleIconFile</key>
+            <string>fast-diff-viewer</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.binarysubstrate.fast-diff-viewer</string>
+            <key>CFBundleInfoDictionaryVersion</key>
+            <string>6.0</string>
+            <key>CFBundleName</key>
+            <string>Fast Diff Viewer</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>$VERSION</string>
+            <key>CFBundleVersion</key>
+            <string>$VERSION</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>26.0</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
+
+          for spec in \
+            16:icon_16x16.png \
+            32:icon_16x16@2x.png \
+            32:icon_32x32.png \
+            64:icon_32x32@2x.png \
+            128:icon_128x128.png \
+            256:icon_128x128@2x.png \
+            256:icon_256x256.png \
+            512:icon_256x256@2x.png \
+            512:icon_512x512.png \
+            1024:icon_512x512@2x.png
+          do
+            size="${spec%%:*}"
+            name="${spec#*:}"
+            sips -z "$size" "$size" assets/icon/fast-diff-viewer.png --out "$ICONSET/$name"
+          done
+
+          iconutil -c icns "$ICONSET" -o "$RESOURCES/fast-diff-viewer.icns"
+          tar -czf "$RUNNER_TEMP/$RELEASE_ASSET_NAME" -C "$RUNNER_TEMP/release" "Fast Diff Viewer.app" LICENSE-MIT LICENSE-APACHE THIRD-PARTY-NOTICES.md
+
+      - name: Upload macOS 26 release artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: fast-diff-viewer-macos-26-arm64
+          path: ${{ runner.temp }}/${{ env.RELEASE_ASSET_NAME }}
+          if-no-files-found: error

@@ -1,0 +1,53 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+
+# IDE and editor settings
+/.idea/
+/.vs/
+.venv/
+node_modules/
+__pycache__/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Windows filesystem noise
+Thumbs.db
+Desktop.ini
+
+# Image assets
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.bmp
+*.tif
+*.tiff
+*.svg
+*.ico
+*.avif
+*.heic
+*.heif
+
+# Keep the committed app icon master + generated artifacts so
+# `cargo build --release` and `build.rs` / `include_bytes!` have the
+# inputs they need without regenerating on every checkout.
+!assets/icon/fast-diff-viewer.svg
+!assets/icon/fast-diff-viewer.ico
+!assets/icon/fast-diff-viewer.png
+!assets/icon/window_icon.rgba.bin
+!assets/readme-hero.png
+
+# Project
+target/
+out/
+plan.md
+/bench/results/
+/bench/history/*.png
+
+# Historical local WPR traces remain machine-local even though the repo
+# no longer ships a WPR workflow.
+/bench/wpr-runs/

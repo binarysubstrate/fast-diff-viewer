@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "label": "post-app-shell-extraction",
+  "date": "2026-04-20",
+  "date_source": "git_committer_date",
+  "commit": "legacy",
+  "short_commit": "legacy",
+  "source_commit": "legacy",
+  "source_path": "legacy after distribution",
+  "migrated_from": "legacy benchmark distribution",
+  "version": "1.1.0",
+  "rust_version": "rustc 1.94.1 (e408947bf 2026-03-25)\r\nbinary: rustc\r\ncommit-hash: e408947bfd200af42db322daf0fadfe7e26d3bd1\r\ncommit-date: 2026-03-25\r\nhost: x86_64-pc-windows-msvc\r\nrelease: 1.94.1\r\nLLVM version: 21.1.8",
+  "target": "x86_64-pc-windows-msvc",
+  "command": "pwsh -NoProfile -File ./bench/run.ps1 -Scenario all -SkipRamMap",
+  "gate_mode": "SkipRamMap",
+  "machine_note": "reference workstation",
+  "notes": "Benchmark distribution captured after app-shell extraction."
+}

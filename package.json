@@ -1,0 +1,13 @@
+{
+  "name": "fast-diff-viewer-tooling",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "lint:md": "markdownlint-cli2",
+    "lint:md:fix": "markdownlint-cli2 --fix"
+  },
+  "devDependencies": {
+    "markdownlint-cli2": "0.22.1"
+  }
+}

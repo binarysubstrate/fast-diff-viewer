@@ -1,0 +1,59 @@
+name: Release Build Windows
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    name: Build Windows x64 release artifact
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    env:
+      CARGO_ABOUT_VERSION: 0.9.0
+      CARGO_TERM_COLOR: always
+      RELEASE_ASSET_NAME: fast-diff-viewer-windows-x64.zip
+      RELEASE_TARGET: x86_64-pc-windows-msvc
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust 1.94.1
+        uses: dtolnay/rust-toolchain@1.94.1
+        with:
+          targets: ${{ env.RELEASE_TARGET }}
+
+      - name: Cache cargo registry / git / target
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-cargo-release-${{ hashFiles('Cargo.lock', 'Cargo.toml') }}
+          restore-keys: windows-cargo-release-
+
+      - name: Install cargo-about 0.9.0
+        run: cargo install cargo-about --version $env:CARGO_ABOUT_VERSION --features cli --locked --force
+
+      - name: Fetch release dependency graph
+        run: cargo fetch --locked
+
+      - name: Build release binary
+        run: cargo build --release --locked --target $env:RELEASE_TARGET
+
+      - name: Stage Windows release artifact
+        run: |
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/release" | Out-Null
+          Copy-Item "target/$env:RELEASE_TARGET/release/fast-diff-viewer.exe" "$env:RUNNER_TEMP/release/fast-diff-viewer.exe"
+          Copy-Item LICENSE-MIT "$env:RUNNER_TEMP/release/LICENSE-MIT"
+          Copy-Item LICENSE-APACHE "$env:RUNNER_TEMP/release/LICENSE-APACHE"
+          cargo about generate legal/third-party-notices.hbs --config legal/about.toml --locked --offline --fail --output-file "$env:RUNNER_TEMP/release/THIRD-PARTY-NOTICES.md"
+          Compress-Archive -Path "$env:RUNNER_TEMP/release/*" -DestinationPath "$env:RUNNER_TEMP/$env:RELEASE_ASSET_NAME" -Force
+
+      - name: Upload Windows release artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: fast-diff-viewer-windows-x64
+          path: ${{ runner.temp }}/${{ env.RELEASE_ASSET_NAME }}
+          if-no-files-found: error

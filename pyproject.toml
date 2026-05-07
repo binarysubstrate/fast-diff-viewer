@@ -1,0 +1,19 @@
+[tool.poetry]
+package-mode = false
+name = "fdv-benchmark-plotter"
+version = "0.1.0"
+description = "Repo-local helper for plotting Fast Diff Viewer benchmark distributions."
+authors = ["Michelle Welcks"]
+readme = "scripts/README.md"
+
+[tool.poetry.dependencies]
+python = "^3.13"
+matplotlib = "^3.10.8"
+
+[tool.poetry.group.dev.dependencies]
+flake8 = "^7.3.0"
+pyright = "^1.1.408"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

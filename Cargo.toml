@@ -1,0 +1,93 @@
+[package]
+name = "fast-diff-viewer"
+version = "2.6.2"
+edition = "2024"
+rust-version = "1.94.1"
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "fast-diff-viewer"
+path = "src/main.rs"
+
+[[example]]
+name = "gen_fixtures"
+path = "scripts/gen_fixtures.rs"
+
+[[example]]
+name = "gen_icon"
+path = "scripts/gen_icon.rs"
+
+[[example]]
+name = "bench_runner"
+path = "scripts/bench_runner.rs"
+
+[[example]]
+name = "capture_app_screenshot"
+path = "scripts/capture_app_screenshot.rs"
+
+[[example]]
+name = "record_benchmark"
+path = "scripts/record_benchmark.rs"
+
+[[example]]
+name = "visual_contract_analyze"
+path = "scripts/visual_contract_analyze.rs"
+
+[[example]]
+name = "visual_contract_classify"
+path = "scripts/visual_contract_classify.rs"
+
+[[example]]
+name = "visual_contract_drive_case"
+path = "scripts/visual_contract_drive_case.rs"
+
+[[example]]
+name = "visual_contract_probe"
+path = "scripts/visual_contract_probe.rs"
+
+[[example]]
+name = "visual_contract_run_all"
+path = "scripts/visual_contract_run_all.rs"
+
+[features]
+bench = []
+
+[dependencies]
+ahash = "0.8"
+egui = "0.33"
+similar = "3.1"
+
+[target.'cfg(windows)'.dependencies]
+eframe = { version = "0.33", default-features = false, features = ["default_fonts", "glow"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+eframe = { version = "0.33", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+eframe = { version = "0.33", default-features = false, features = ["default_fonts", "glow"] }
+
+[dev-dependencies]
+ico = "0.4"
+png = "0.18"
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_Xps",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_SystemInformation",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true
+opt-level = 3
