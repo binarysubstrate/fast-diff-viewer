@@ -3,6 +3,19 @@
 Tagged releases run all target CI workflows first, then publish release assets
 through [`.github/workflows/release.yml`](../.github/workflows/release.yml).
 
+## Version Preflight
+
+Before pushing a release tag, update the `version` in `Cargo.toml` to match
+the tag without the leading `v`, then update `Cargo.lock`. The Cargo package
+version is the source of truth for packaged app metadata, including Windows
+`FileVersion` / `ProductVersion` and the macOS bundle version.
+
+For example, a `v1.0.0` tag must be created from a commit where `Cargo.toml`
+and the root `fast-diff-viewer` entry in `Cargo.lock` both say `1.0.0`.
+Before publishing, verify the built Windows executable reports matching
+`FileVersion` and `ProductVersion`, and verify the macOS `Info.plist` uses the
+same version.
+
 ## Assets
 
 Each release publishes these assets:

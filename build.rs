@@ -15,8 +15,9 @@
 //! independent of Windows resource tooling.
 
 fn main() {
-    // Re-run only when the embedded icon changes.
+    // The resource embeds the icon and Cargo package version.
     println!("cargo:rerun-if-changed=assets/icon/fast-diff-viewer.ico");
+    println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=build.rs");
 
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
