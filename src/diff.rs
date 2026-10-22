@@ -95,7 +95,9 @@ pub fn assign_roles_and_emphasis(
     let mut right_roles = vec![Role::Equal; right.len()];
     let mut left_emphasis: Vec<Vec<Range<usize>>> = vec![Vec::new(); left.len()];
     let mut right_emphasis: Vec<Vec<Range<usize>>> = vec![Vec::new(); right.len()];
-    let ops = capture_diff_slices(Algorithm::Myers, left, right);
+    // Similar 3.2 renamed the exact Myers behavior to RawMyers; retain
+    // the same shortest-edit-script semantics across dependency upgrades.
+    let ops = capture_diff_slices(Algorithm::RawMyers, left, right);
     for op in ops {
         match op {
             DiffOp::Equal {
@@ -264,7 +266,7 @@ fn paired_line_diff(left_content: &[u8], right_content: &[u8]) -> PairedLineDiff
     let (rtok, rranges) = word_tokens(right_content);
     let left_words = ltok.iter().filter(|t| is_word_token(t)).count();
     let right_words = rtok.iter().filter(|t| is_word_token(t)).count();
-    let ops = capture_diff_slices(Algorithm::Myers, &ltok, &rtok);
+    let ops = capture_diff_slices(Algorithm::RawMyers, &ltok, &rtok);
     let mut left_spans: Vec<Range<usize>> = Vec::new();
     let mut right_spans: Vec<Range<usize>> = Vec::new();
     let mut matched_bytes = 0usize;
@@ -403,6 +405,33 @@ mod tests {
         let (lr, rr) = roles("a\nb\nc", "a\nb\nc");
         assert_eq!(lr, vec![Role::Equal, Role::Equal, Role::Equal]);
         assert_eq!(rr, vec![Role::Equal, Role::Equal, Role::Equal]);
+    }
+
+    #[test]
+    fn expensive_repetitive_diff_preserves_exact_equal_lines() {
+        // Similar 3.2's heuristic Myers path keeps only 141 equal lines in
+        // this fixture. Preserve the previous shortest edit script (144)
+        // so a dependency update does not add spurious changed lines.
+        let mut state = 15_690_471_396_791_370_040_u64;
+        let mut buffer = || {
+            (0..512)
+                .map(|_| {
+                    state = state
+                        .wrapping_mul(6_364_136_223_846_793_005)
+                        .wrapping_add(1);
+                    format!("{}\n", (state >> 32) % 32)
+                })
+                .collect::<String>()
+        };
+        let left = buffer();
+        let right = buffer();
+        let (left_roles, right_roles) = roles(&left, &right);
+        for pane_roles in [left_roles, right_roles] {
+            assert_eq!(
+                pane_roles.iter().filter(|&&r| r == Role::Equal).count(),
+                144
+            );
+        }
     }
 
     #[test]
@@ -841,7 +870,7 @@ mod tests {
         // Gather every paired Changed line pair by replaying Myers: we
         // re-diff and tap into the Replace branches directly so the
         // measurement covers only `compute_inline_emphasis` calls.
-        let ops = capture_diff_slices(Algorithm::Myers, &la, &rb);
+        let ops = capture_diff_slices(Algorithm::RawMyers, &la, &rb);
         let mut pairs: Vec<(&[u8], &[u8])> = Vec::new();
         for op in ops {
             if let DiffOp::Replace {

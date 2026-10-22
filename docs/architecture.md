@@ -11,7 +11,7 @@ diffing, pane-scoped coloring, synchronized scrolling, and no persisted state.
 
 ## Product Contract
 
-- Rust-only desktop app built on `eframe 0.33` / `egui 0.33`.
+- Rust-only desktop app built on `eframe 0.37` / `egui 0.37`.
 - Supported release targets: Windows 10/11 x64, Ubuntu 22.04 x64,
   Ubuntu 24.04 x64, and macOS 26 arm64.
 - Single native executable per supported target: `fast-diff-viewer.exe` on
@@ -35,8 +35,8 @@ diffing, pane-scoped coloring, synchronized scrolling, and no persisted state.
 ## Runtime Data Flow
 
 1. Pane buffers live in [`src/app.rs`](../src/app.rs).
-2. `detect_and_dispatch()` compares the current buffers to the last rendered
-   revision and submits diff work when either side changes.
+2. `detect_and_dispatch()` compares the current buffers to the last submitted
+   buffers and submits diff work when either side changes.
 3. [`src/pipeline.rs`](../src/pipeline.rs) runs a background worker on
    `std::thread`, coalescing edits to at most one in-flight job plus one
    queued job.
@@ -58,6 +58,7 @@ diffing, pane-scoped coloring, synchronized scrolling, and no persisted state.
 | [`src/pipeline.rs`](../src/pipeline.rs) | Async diff pipeline, worker thread, job coalescing, revision tracking, and liveness reporting. |
 | [`src/diff.rs`](../src/diff.rs) | Tokenization, line-role assignment, and inline-emphasis word diff. |
 | [`src/segment.rs`](../src/segment.rs) | Canonical line segmentation. |
+| [`src/buffer_stamp.rs`](../src/buffer_stamp.rs) | Buffer revision, byte length, and text hash used for styled-paint identity and layout-cache keys. |
 | [`src/render.rs`](../src/render.rs) | Styled `LayoutJob` construction and neutral fallback. |
 | [`src/theme.rs`](../src/theme.rs) | `AppTheme` chrome and diff-palette tokens. |
 | [`src/bench.rs`](../src/bench.rs) | `#[cfg(feature = "bench")]` harness used by the Rust benchmark runner. |

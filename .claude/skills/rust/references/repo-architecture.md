@@ -2,7 +2,7 @@
 
 ## Product Shape
 
-- Rust desktop app built with `eframe 0.33` and `egui 0.33`
+- Rust desktop app built with `eframe 0.37` and `egui 0.37`
 - One release artifact per target platform, containing one native app executable
 - Exactly two editable panes with a fixed 50/50 layout
 - Panes are stock `TextEdit::multiline` widgets
@@ -11,7 +11,7 @@
 - Platform-specific behavior should be explicit and target-gated; shared code should avoid accidental Windows-only assumptions
 - Scroll synchronization reads `ScrollAreaOutput.state.offset` and feeds clamped offsets back through `ScrollArea::scroll_offset(...)`
 - Pane-scoped diff palette: left rose family, right green family, equal lines transparent
-- `src/main.rs` owns entrypoint/`NativeOptions` setup; `src/app.rs` owns `App`, pane state, and the eframe update/render flow.
+- `src/main.rs` owns entrypoint/`NativeOptions` setup; `src/app.rs` owns `App`, pane state, and the eframe `App::ui()` render callback.
 - `Cargo.toml` owns target-specific `eframe` feature sets; `build.rs` owns Windows PE icon embedding and must stay non-Windows safe.
 
 ## Core Data Flow
@@ -30,7 +30,7 @@
 | `segment()` | Canonical line segmentation. Do not create alternate line-splitting logic. |
 | `tokenize()` | Owns compare-only CRLF normalization. |
 | `assign_roles_and_emphasis()` | Produces both panes' line roles and inline emphasis. |
-| `compute_inline_emphasis()` | Word-level token diff for paired changed lines. |
+| `paired_line_diff()` | Word-level token diff and similarity signals for candidate changed-line pairs. |
 | `BufferStamp::from_text()` | Exact pane-buffer identity: revision, byte length, and deterministic text hash. |
 | `is_styled_paint_valid()` | Single source of truth for styled vs neutral fallback. |
 | `build_layout_job()` | Hot path for line tinting, emphasis, section count, and performance. |

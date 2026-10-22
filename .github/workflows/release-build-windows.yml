@@ -10,21 +10,21 @@ jobs:
     permissions:
       contents: read
     env:
-      CARGO_ABOUT_VERSION: 0.9.0
+      CARGO_ABOUT_VERSION: 0.9.2
       CARGO_TERM_COLOR: always
       RELEASE_ASSET_NAME: fast-diff-viewer-windows-x64.zip
       RELEASE_TARGET: x86_64-pc-windows-msvc
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - name: Install Rust 1.94.1
-        uses: dtolnay/rust-toolchain@1.94.1
+      - name: Install Rust 1.99.1
+        uses: dtolnay/rust-toolchain@1.99.1
         with:
           targets: ${{ env.RELEASE_TARGET }}
 
       - name: Cache cargo registry / git / target
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -33,7 +33,7 @@ jobs:
           key: windows-cargo-release-${{ hashFiles('Cargo.lock', 'Cargo.toml') }}
           restore-keys: windows-cargo-release-
 
-      - name: Install cargo-about 0.9.0
+      - name: Install cargo-about 0.9.2
         run: cargo install cargo-about --version $env:CARGO_ABOUT_VERSION --features cli --locked --force
 
       - name: Fetch release dependency graph
@@ -41,6 +41,19 @@ jobs:
 
       - name: Build release binary
         run: cargo build --release --locked --target $env:RELEASE_TARGET
+
+      - name: Verify Windows executable version metadata
+        run: |
+          $metadata = cargo metadata --no-deps --format-version 1 --locked | ConvertFrom-Json
+          $package = $metadata.packages | Where-Object { $_.name -eq "fast-diff-viewer" }
+          $expected = $package.version
+          $binary = Get-Item "target/$env:RELEASE_TARGET/release/fast-diff-viewer.exe"
+          foreach ($field in @("FileVersion", "ProductVersion")) {
+            $actual = $binary.VersionInfo.$field
+            if ($actual -ne $expected) {
+              throw "$field is '$actual'; expected '$expected' from Cargo.toml"
+            }
+          }
 
       - name: Stage Windows release artifact
         run: |

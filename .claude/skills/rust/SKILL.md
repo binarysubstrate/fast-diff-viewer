@@ -36,7 +36,7 @@ If a requested change conflicts with an architecture invariant, treat it as a pr
 
 ## Product Contract
 
-- Rust desktop app built on `eframe 0.33` / `egui 0.33`
+- Rust desktop app built on `eframe 0.37` / `egui 0.37`
 - Supported release targets: Windows 10/11 x64, Ubuntu 22.04 x64, Ubuntu 24.04 x64, and macOS 26 arm64
 - One release artifact per target platform, containing one native app executable
 - Exactly two editable panes in a fixed 50/50 split

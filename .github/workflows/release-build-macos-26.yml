@@ -10,21 +10,21 @@ jobs:
     permissions:
       contents: read
     env:
-      CARGO_ABOUT_VERSION: 0.9.0
+      CARGO_ABOUT_VERSION: 0.9.2
       CARGO_TERM_COLOR: always
       RELEASE_ASSET_NAME: fast-diff-viewer-macos-26-arm64.tar.gz
       RELEASE_TARGET: aarch64-apple-darwin
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - name: Install Rust 1.94.1
-        uses: dtolnay/rust-toolchain@1.94.1
+      - name: Install Rust 1.99.1
+        uses: dtolnay/rust-toolchain@1.99.1
         with:
           targets: ${{ env.RELEASE_TARGET }}
 
       - name: Cache cargo registry / git / target
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -33,7 +33,7 @@ jobs:
           key: macos-26-cargo-release-${{ hashFiles('Cargo.lock', 'Cargo.toml') }}
           restore-keys: macos-26-cargo-release-
 
-      - name: Install cargo-about 0.9.0
+      - name: Install cargo-about 0.9.2
         run: cargo install cargo-about --version "$CARGO_ABOUT_VERSION" --features cli --locked --force
 
       - name: Fetch release dependency graph
@@ -90,6 +90,14 @@ jobs:
           </dict>
           </plist>
           PLIST
+
+          for key in CFBundleShortVersionString CFBundleVersion; do
+            actual="$(/usr/libexec/PlistBuddy -c "Print :$key" "$CONTENTS/Info.plist")"
+            if [ "$actual" != "$VERSION" ]; then
+              echo "$key is '$actual'; expected '$VERSION' from Cargo.toml" >&2
+              exit 1
+            fi
+          done
 
           for spec in \
             16:icon_16x16.png \

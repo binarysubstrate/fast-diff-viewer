@@ -424,9 +424,9 @@ fn invoke_cold_start(
             median, config.cold_start_median_ms
         ));
     }
-    if worst > config.cold_start_worst_ms {
+    if worst >= config.cold_start_worst_ms {
         failures.push(format!(
-            "cold_start worst {:.3} ms > {} ms",
+            "cold_start worst {:.3} ms >= {} ms",
             worst, config.cold_start_worst_ms
         ));
     }

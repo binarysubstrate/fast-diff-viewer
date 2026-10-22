@@ -78,14 +78,16 @@ per-pane roles:
 - `Equal` maps to equal roles on both sides.
 - `Delete` marks left-only lines as `AddedOrRemoved`.
 - `Insert` marks right-only lines as `AddedOrRemoved`.
-- `Replace` pairs the first `min(left_len, right_len)` lines as `Changed`,
-  then marks the longer side's remainder as `AddedOrRemoved`.
+- `Replace` pairs the first `min(left_len, right_len)` lines and computes
+  their word diffs. Pairs that pass the similarity guard are `Changed`;
+  unrelated substantial lines are `AddedOrRemoved` on both sides without
+  inline emphasis. The longer side's remainder is `AddedOrRemoved`.
 
 Why it is fast:
 
 - Myers runs at line granularity, not character granularity.
-- The app computes inline emphasis only for paired `Changed` lines inside a
-  `Replace` op.
+- The app computes word diffs only for paired lines inside a `Replace` op,
+  retaining inline emphasis only for pairs classified as `Changed`.
 - Pure insert/delete lines skip word-level diffing entirely.
 
 Tradeoff:
@@ -98,14 +100,24 @@ Tradeoff:
 
 Owner: [`src/diff.rs`](../src/diff.rs)
 
-`compute_inline_emphasis(left_line, right_line)` tokenizes one changed line pair
-into maximal runs of ASCII word bytes and non-word bytes, then runs the same
-Myers diff at token granularity. It returns byte ranges for deleted tokens on
-the left and inserted tokens on the right. Adjacent spans are merged.
+`paired_line_diff(left_line, right_line)` tokenizes one candidate line pair
+into maximal runs of ASCII word bytes (alphanumeric or underscore) and
+non-word bytes, then runs the same Myers diff at token granularity. It returns
+byte ranges for deleted tokens on the left and inserted tokens on the right,
+plus word counts and a similarity score. Adjacent spans are merged.
+
+When both lines contain at least 12 tokens with ASCII alphanumeric bytes and
+their similarity is below 0.4, the pair is treated as unrelated. Both lines
+receive line tint only, avoiding scattered emphasis when a blank-line anchor
+pairs different paragraphs. Similarity is twice the byte count of all matched
+tokens, including non-word tokens, divided by the combined line byte length.
+Short lines retain ordinary word diffing, so one-word edits still receive
+inline emphasis.
 
 Why it is fast:
 
-- It runs only for paired `Changed` lines.
+- It runs only for paired `Replace` lines and skips tokenization when their
+  content is identical.
 - Tokenization is one linear pass over each changed line.
 - It reuses the existing `similar` dependency instead of introducing a second
   diff engine.
@@ -228,7 +240,7 @@ the current frame and defers the right pane result by one frame.
 Why it is fast:
 
 - A single large styled galley rebuild can dominate a frame. Deferring one pane
-  prevents two large rebuilds from landing in the same `update()`.
+  prevents two large rebuilds from landing in the same `App::ui()` call.
 - Smaller edit-latency fixtures stay on the immediate two-pane path because the
   extra frame would cost latency without improving the frame budget.
 

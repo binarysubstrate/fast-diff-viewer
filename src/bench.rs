@@ -5,7 +5,7 @@
 //! Scenarios:
 //! - `cold_start`: captures `T0` at first line of `main()` (in a
 //!   `OnceLock<Instant>`) and `T1` at the end of the first
-//!   `App::update()` that painted both panes; emits `cold_start.csv`.
+//!   `App::ui()` that painted both panes; emits `cold_start.csv`.
 //! - `edit_latency`: loads the 2k-line fixtures via direct buffer
 //!   assignment, establishes focus on the left pane, then injects
 //!   `Event::Text("x")` on every other frame and records probes keyed

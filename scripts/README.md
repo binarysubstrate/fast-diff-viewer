@@ -30,7 +30,7 @@ benchmark-history entries under `bench/history/`.
 Record the latest `bench/results` CSVs:
 
 ```shell
-cargo run --release --example record_benchmark -- --label v1.0.0-release-gate --use-existing-results
+cargo run --release --example record_benchmark -- --release-gate-label --use-existing-results
 ```
 
 Run and record multiple batches:
@@ -61,21 +61,33 @@ poetry run python -m pyright --project pyrightconfig.json scripts/benchmark-plot
 
 ## Visual Capture
 
-The Rust visual helpers provide scripted Windows screenshots and
-visual-contract diagnostics for local visual checks. They launch the release
-binary when needed, drive pane content, capture the app window, and close it.
+The capture, drive-case, and run-all helpers require Windows at runtime. They
+launch the release binary when needed, drive pane content, capture the app
+window, and close it. The analyze, classify, and probe helpers read existing
+PNGs and can run on other platforms.
 
 ```shell
 cargo build --release
 cargo run --release --example capture_app_screenshot -- --output-path docs/visual-contract/smoke.png
 ```
 
-Analyze a captured visual-contract screenshot:
+Capture a case for analysis on Windows. The analyzers expect the `before`
+suffix, such as `A1-before.png`:
+
+```shell
+cargo run --release --example visual_contract_drive_case -- --case A1 --left "alpha beta" --right "alpha beta" --out-dir docs/visual-contract --suffix before
+```
+
+Alternatively, capture the predefined case inputs:
+
+```shell
+cargo run --release --example visual_contract_run_all -- --out-dir docs/visual-contract --suffix before --only A1
+```
+
+Analyze the captured screenshot:
 
 ```shell
 cargo run --release --example visual_contract_analyze -- --case A1 --in-dir docs/visual-contract
 cargo run --release --example visual_contract_classify -- --case A1 --in-dir docs/visual-contract
-cargo run --release --example visual_contract_drive_case -- --case A1 --left "alpha beta" --right "alpha beta" --out-dir docs/visual-contract --suffix rust-smoke
 cargo run --release --example visual_contract_probe -- --case A1 --in-dir docs/visual-contract
-cargo run --release --example visual_contract_run_all -- --out-dir docs/visual-contract --suffix rust-smoke --only A1
 ```

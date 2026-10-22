@@ -3,7 +3,7 @@
 ![Screenshot of Fast Diff Viewer UI](assets/readme-hero.png)
 
 A desktop diff viewer for Windows, Ubuntu, and macOS built in Rust on
-[eframe 0.33 / egui 0.33](https://github.com/emilk/egui).
+[eframe 0.37 / egui 0.37](https://github.com/emilk/egui).
 
 ## About
 

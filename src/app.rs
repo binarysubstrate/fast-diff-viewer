@@ -72,7 +72,7 @@ struct Pane {
     applied_stamp: BufferStamp,
     /// True if the layouter took the styled (aligned) path during the
     /// most recent frame; false if it took the neutral fallback. Reset
-    /// to false at the top of each `update()`.
+    /// to false at the top of each `ui()`.
     painted_styled_this_frame: bool,
 }
 
@@ -110,7 +110,7 @@ pub(crate) struct App {
     /// result would otherwise force both panes' layouters to rebuild
     /// the galley in the same frame on a large (>200KB) buffer — the
     /// large_paste scenario where two back-to-back 10k-section galley
-    /// rebuilds in one `update()` blow past the 100 ms per-frame budget.
+    /// rebuilds in one `ui()` blow past the 100 ms per-frame budget.
     /// Consumed at the top of the next `apply_diff_results`.
     pending_right_apply: Option<PendingRightApply>,
     #[cfg(feature = "bench")]
@@ -147,17 +147,14 @@ fn apply_theme(ctx: &egui::Context, theme: &AppTheme) {
         // crosshatch painted behind `scroll_rect` in `render_pane`
         // shows through the editable surface. Other `extreme_bg_color`
         // consumers (unused in this app today) keep the opaque value.
-        // egui 0.33: `text_edit_bg_color` defaults to `extreme_bg_color`
-        // when None; setting it explicitly here overrides only the
-        // TextEdit frame resolution path at
-        // `egui-0.33.3/src/style.rs:1082-1084`.
+        // `text_edit_bg_color` defaults to `extreme_bg_color` when
+        // None; setting it explicitly overrides only the TextEdit fill.
         v.text_edit_bg_color = Some(egui::Color32::TRANSPARENT);
         v.override_text_color = Some(theme.ink);
         v.text_cursor.stroke.color = theme.caret;
         v.selection.bg_fill = theme.selection;
-        // egui 0.33's `paint_text_selection` rewrites every
-        // selected glyph's vertex color to `selection.stroke.color`
-        // (see `text_selection/visuals.rs:29,78`). Setting this to
+        // egui's `paint_text_selection` uses `selection.stroke.color`
+        // for the selected glyphs. Setting this to
         // `Stroke::NONE` would suppress the focus outline but make
         // selected text invisible. Keep width 0 so no focus
         // outline draws, but paint selected glyphs in the theme's ink
@@ -318,9 +315,10 @@ impl eframe::App for App {
         self.theme.bg_frame.to_normalized_gamma_f32()
     }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         #[cfg(feature = "bench")]
         let frame_entry = std::time::Instant::now();
+        let ctx = ui.ctx().clone();
 
         // Reset per-frame flags before anything draws.
         self.left.painted_styled_this_frame = false;
@@ -338,19 +336,19 @@ impl eframe::App for App {
 
         #[cfg(feature = "bench")]
         if self.bench.is_some() {
-            bench_before_draw(self, ctx);
+            bench_before_draw(self, &ctx);
         }
 
         let theme = self.theme;
-        draw_title_bar(ctx, &theme, self.pipeline.is_worker_alive());
+        draw_title_bar(ui, &theme, self.pipeline.is_worker_alive());
 
-        // Hairline-divider variant of the Phase-1 SidePanel layout. The
+        // Hairline-divider variant of the Phase-1 panel layout. The
         // 50/50 ratio is enforced by sizing the left panel to half the
         // available central area width on each frame; `resizable(false)`
         // prevents the user from dragging the split away from 50/50
         // (the plan locks the ratio).
         let left_width = {
-            let available = ctx.available_rect().width();
+            let available = ui.available_rect_before_wrap().width();
             (available * 0.5).max(80.0)
         };
         // Panels use `bg_pane` fill with NO inner_margin so the
@@ -364,11 +362,11 @@ impl eframe::App for App {
         // content-space hit-testing until `end()` clamps it back.
         let left_offset_in = clamp_sync_for_pane(self.sync_scroll_offset, self.left_max_offset);
         let right_offset_in = clamp_sync_for_pane(self.sync_scroll_offset, self.right_max_offset);
-        let (left_offset_out, left_max_offset) = egui::SidePanel::left("pane_left_panel")
+        let (left_offset_out, left_max_offset) = egui::Panel::left("pane_left_panel")
             .resizable(false)
-            .exact_width(left_width)
+            .exact_size(left_width)
             .frame(pane_frame)
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 render_pane(
                     ui,
                     "pane_left",
@@ -381,7 +379,7 @@ impl eframe::App for App {
             .inner;
         let (right_offset_out, right_max_offset) = egui::CentralPanel::default()
             .frame(pane_frame)
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 render_pane(
                     ui,
                     "pane_right",
@@ -419,7 +417,7 @@ impl eframe::App for App {
 
         #[cfg(feature = "bench")]
         if self.bench.is_some() {
-            bench_after_draw(self, ctx, frame_entry);
+            bench_after_draw(self, &ctx, frame_entry);
         }
     }
 }
@@ -569,7 +567,7 @@ fn render_pane(
             // (via `visuals.text_edit_bg_color`), so the hatch shows
             // through the text field. The gutter and padding strip
             // outside `scroll_rect` read as a flat `theme.bg_pane`
-            // fill inherited from the SidePanel frame.
+            // fill inherited from the panel frame.
             let scroll_painter = ui.painter_at(scroll_rect);
             paint_crosshatch(&scroll_painter, scroll_rect, theme);
 
@@ -651,8 +649,8 @@ fn render_pane(
             (captured_scroll_offset, max_scroll_offset)
         });
 
-    // Bubble the pane's post-render scroll offset back to `App::update`
-    // plus the current pane max so `App::update` can clamp the next
+    // Bubble the pane's post-render scroll offset back to `App::ui`
+    // plus the current pane max so `App::ui` can clamp the next
     // frame's shared input before egui consumes it.
     frame_response.inner
 }
@@ -843,15 +841,16 @@ fn should_paint_gutter_markers(styled_paint_valid: bool, rows: usize, role_count
 /// Not yet wired: resize handles - `with_decorations(false)` removes
 /// the native edge affordances. Adding resize would be a product-design
 /// change because it introduces new pointer handling around pane surfaces.
-fn draw_title_bar(ctx: &egui::Context, theme: &AppTheme, worker_alive: bool) {
-    egui::TopBottomPanel::top("title_bar")
-        .exact_height(34.0)
+fn draw_title_bar(ui: &mut egui::Ui, theme: &AppTheme, worker_alive: bool) {
+    let ctx = ui.ctx().clone();
+    egui::Panel::top("title_bar")
+        .exact_size(34.0)
         .frame(
             egui::Frame::NONE
                 .fill(theme.bg_app)
                 .inner_margin(egui::Margin::symmetric(10, 6)),
         )
-        .show(ctx, |ui| {
+        .show(ui, |ui| {
             // Full-width invisible drag surface beneath the row
             // content. Windows decorations are off, so clicking any
             // non-button area of this strip starts an OS window drag.

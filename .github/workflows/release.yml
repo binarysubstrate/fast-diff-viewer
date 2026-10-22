@@ -9,24 +9,59 @@ permissions:
   contents: read
 
 jobs:
+  version-preflight:
+    name: Verify release version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify tag and Cargo package versions match
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import tomllib
+
+          manifest = tomllib.loads(pathlib.Path("Cargo.toml").read_text())
+          lock = tomllib.loads(pathlib.Path("Cargo.lock").read_text())
+          package = manifest["package"]
+          expected_tag = f"v{package['version']}"
+          if os.environ["RELEASE_TAG"] != expected_tag:
+              raise SystemExit(f"Release tag must be {expected_tag}")
+          locked = [
+              entry for entry in lock["package"]
+              if entry["name"] == package["name"] and "source" not in entry
+          ]
+          if len(locked) != 1 or locked[0]["version"] != package["version"]:
+              raise SystemExit("Cargo.lock package version must match Cargo.toml")
+          print(f"Verified {expected_tag} in Cargo.toml and Cargo.lock")
+          PY
+
   ci-windows:
     name: CI Windows
+    needs: version-preflight
     uses: ./.github/workflows/ci-windows.yml
 
   ci-ubuntu-22-04:
     name: CI Ubuntu 22.04
+    needs: version-preflight
     uses: ./.github/workflows/ci-ubuntu-22.04.yml
 
   ci-ubuntu-24-04:
     name: CI Ubuntu 24.04
+    needs: version-preflight
     uses: ./.github/workflows/ci-ubuntu-24.04.yml
 
   ci-macos-26:
     name: CI macOS 26
+    needs: version-preflight
     uses: ./.github/workflows/ci-macos-26.yml
 
   ci-markdown:
     name: CI Markdown
+    needs: version-preflight
     uses: ./.github/workflows/ci-markdown.yml
 
   build-windows:
