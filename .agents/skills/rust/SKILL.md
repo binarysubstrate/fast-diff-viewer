@@ -107,7 +107,7 @@ If a requested change conflicts with an architecture invariant, treat it as a pr
 
 ### Platform and build configuration
 
-- `Cargo.toml` keeps `eframe` target-specific: Windows and macOS use `default_fonts` + `glow`; Linux adds `wayland` + `x11`. Keep new platform features explicit instead of widening every target by accident.
+- `Cargo.toml` keeps `eframe` target-specific: Windows and macOS use `clipboard` + `default_fonts` + `glow`; Linux adds `wayland` + `x11`. Keep new platform features explicit instead of widening every target by accident.
 - `build.rs` embeds the Windows shell icon through `winresource` only for Windows targets; non-Windows builds must not require Windows resource tooling.
 - The custom title bar and `with_decorations(false)` behavior are part of the app contract, but resize/titlebar affordances can vary by platform. Gate OS-specific fixes tightly.
 - GitHub workflows are split by OS target for CI and release builds. When touching target dependencies or platform code, check each supported target workflow instead of assuming coverage from one local OS.

@@ -64,7 +64,7 @@
 
 ### Platform and build state
 
-- Windows and macOS builds use `eframe` with `default_fonts` and `glow`; Linux builds add `wayland` and `x11`.
+- Windows and macOS builds use `eframe` with `clipboard`, `default_fonts`, and `glow`; Linux builds add `wayland` and `x11`.
 - `build.rs` uses `winresource` only for Windows targets.
 - CI runs locked release build coverage per supported OS target. Keep target-specific dependencies in the narrowest applicable table.
 - GUI-driving visual helpers currently use Win32 APIs and should be treated as Windows validation tools until equivalent drivers exist for other platforms.
