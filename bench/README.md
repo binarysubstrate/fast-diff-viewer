@@ -7,11 +7,11 @@ CSV output, and committed benchmark history.
 
 The measured boundary is app-controlled, not GPU presentation:
 
-- `cold_start` captures `T1` at the end of the first `App::update()` that
+- `cold_start` captures `T1` at the end of the first `App::ui()` that
   paints both text panes.
-- `edit_latency` resolves a probe at the end of `App::update()` once both
+- `edit_latency` resolves a probe at the end of `App::ui()` once both
   panes have painted the revision created by the injected edit.
-- `large_paste` records `App::update()` wall time for 120 frames after the
+- `large_paste` records `App::ui()` wall time for 120 frames after the
   paste and records settle time when the paste revision first paints styled.
 
 Display, compositor, and monitor-sync costs are real but intentionally outside

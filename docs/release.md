@@ -1,7 +1,8 @@
 # Release Process
 
-Tagged releases run all target CI workflows first, then publish release assets
-through [`.github/workflows/release.yml`](../.github/workflows/release.yml).
+Tagged releases verify the tag and Cargo package versions, run all target CI
+workflows, then publish release assets through
+[`.github/workflows/release.yml`](../.github/workflows/release.yml).
 
 ## Version Preflight
 
@@ -10,11 +11,22 @@ the tag without the leading `v`, then update `Cargo.lock`. The Cargo package
 version is the source of truth for packaged app metadata, including Windows
 `FileVersion` / `ProductVersion` and the macOS bundle version.
 
-For example, a `v1.0.0` tag must be created from a commit where `Cargo.toml`
-and the root `fast-diff-viewer` entry in `Cargo.lock` both say `1.0.0`.
-Before publishing, verify the built Windows executable reports matching
-`FileVersion` and `ProductVersion`, and verify the macOS `Info.plist` uses the
-same version.
+For example, a `v1.1.0` tag must be created from a commit where `Cargo.toml`
+and the root `fast-diff-viewer` entry in `Cargo.lock` both say `1.1.0`.
+The release workflow rejects mismatches before target CI starts. Before
+packaging, the Windows build verifies the executable's `FileVersion` and
+`ProductVersion`, and the macOS build verifies `CFBundleShortVersionString`
+and `CFBundleVersion` in `Info.plist` against the Cargo package version.
+
+Release signoff also requires the benchmark gate on the reference workstation
+with a clean shell, as defined in
+[`docs/benchmark-contract.md`](benchmark-contract.md). Target CI does not run
+this gate:
+
+```shell
+cargo build --release --locked --features bench
+cargo run --release --example bench_runner -- --scenario all
+```
 
 ## Assets
 
@@ -35,7 +47,7 @@ All binary packages include these legal files at the archive root:
 - `THIRD-PARTY-NOTICES.md`
 
 `THIRD-PARTY-NOTICES.md` is generated during release builds with
-`cargo-about 0.9.0` from the locked runtime dependency graph. Build-only and
+`cargo-about 0.9.2` from the locked runtime dependency graph. Build-only and
 dev-only dependencies are excluded.
 
 `SHA256SUMS.txt` is generated after final release artifacts are downloaded into

@@ -55,6 +55,29 @@ pub fn tokenize(s: &str) -> Vec<DiffToken<'_>> {
         .collect()
 }
 
+/// Intern complete line tokens for cheap comparisons inside the exact diff.
+/// Hash collisions still compare the original bytes and termination flag.
+/// The map borrows the current job's text and is discarded after this call.
+fn capture_line_diff(left: &[DiffToken<'_>], right: &[DiffToken<'_>]) -> Vec<DiffOp> {
+    let mut ids = ahash::AHashMap::with_capacity(left.len() + right.len());
+    let mut next_id = 0usize;
+    let all_ids: Vec<_> = left
+        .iter()
+        .chain(right.iter())
+        .map(|token| {
+            *ids.entry(*token).or_insert_with(|| {
+                let id = next_id;
+                next_id += 1;
+                id
+            })
+        })
+        .collect();
+    let (left_ids, right_ids) = all_ids.split_at(left.len());
+    // Similar 3.2 renamed the exact Myers behavior to RawMyers; retain
+    // the same shortest-edit-script semantics across dependency upgrades.
+    capture_diff_slices(Algorithm::RawMyers, left_ids, right_ids)
+}
+
 /// Assign per-line roles for both panes.
 ///
 /// Rules:
@@ -95,7 +118,7 @@ pub fn assign_roles_and_emphasis(
     let mut right_roles = vec![Role::Equal; right.len()];
     let mut left_emphasis: Vec<Vec<Range<usize>>> = vec![Vec::new(); left.len()];
     let mut right_emphasis: Vec<Vec<Range<usize>>> = vec![Vec::new(); right.len()];
-    let ops = capture_diff_slices(Algorithm::Myers, left, right);
+    let ops = capture_line_diff(left, right);
     for op in ops {
         match op {
             DiffOp::Equal {
@@ -163,11 +186,11 @@ pub fn assign_roles_and_emphasis(
 /// Word tokenization for inline emphasis.
 ///
 /// Splits a byte slice into maximal runs of ASCII-alphanumeric bytes (plus
-/// `_`) versus non-alphanumeric bytes. Each run becomes one token. ASCII
+/// `_`) versus non-alphanumeric bytes. Each run becomes one borrowed token. ASCII
 /// classification is UTF-8-safe: a multi-byte UTF-8 character's bytes are
 /// all classified as non-word and grouped together, so run boundaries
 /// never split a UTF-8 code point.
-fn word_tokens(s: &[u8]) -> (Vec<Vec<u8>>, Vec<Range<usize>>) {
+fn word_tokens(s: &[u8]) -> (Vec<&[u8]>, Vec<Range<usize>>) {
     if s.is_empty() {
         return (Vec::new(), Vec::new());
     }
@@ -179,13 +202,13 @@ fn word_tokens(s: &[u8]) -> (Vec<Vec<u8>>, Vec<Range<usize>>) {
     for i in 1..s.len() {
         let cur = is_word(s[i]);
         if cur != prev {
-            tokens.push(s[start..i].to_vec());
+            tokens.push(&s[start..i]);
             ranges.push(start..i);
             start = i;
             prev = cur;
         }
     }
-    tokens.push(s[start..].to_vec());
+    tokens.push(&s[start..]);
     ranges.push(start..s.len());
     (tokens, ranges)
 }
@@ -264,7 +287,7 @@ fn paired_line_diff(left_content: &[u8], right_content: &[u8]) -> PairedLineDiff
     let (rtok, rranges) = word_tokens(right_content);
     let left_words = ltok.iter().filter(|t| is_word_token(t)).count();
     let right_words = rtok.iter().filter(|t| is_word_token(t)).count();
-    let ops = capture_diff_slices(Algorithm::Myers, &ltok, &rtok);
+    let ops = capture_diff_slices(Algorithm::RawMyers, &ltok, &rtok);
     let mut left_spans: Vec<Range<usize>> = Vec::new();
     let mut right_spans: Vec<Range<usize>> = Vec::new();
     let mut matched_bytes = 0usize;
@@ -365,6 +388,50 @@ mod tests {
     }
 
     #[test]
+    fn interned_line_diff_matches_direct_raw_myers() {
+        fn next(seed: &mut u64) -> usize {
+            *seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            (*seed >> 32) as usize
+        }
+
+        let lines = [
+            "alpha",
+            "beta",
+            "alpha",
+            "",
+            "é猫",
+            "e\u{301}",
+            "a_b c+d",
+            "\r",
+            "mid\rcarriage",
+        ];
+        let mut seed = 234_567u64;
+        for _ in 0..2_048 {
+            let mut buffers = [String::new(), String::new()];
+            for buffer in &mut buffers {
+                let count = next(&mut seed) % 40;
+                for index in 0..count {
+                    buffer.push_str(lines[next(&mut seed) % lines.len()]);
+                    if index + 1 < count || next(&mut seed).is_multiple_of(2) {
+                        buffer.push_str(if next(&mut seed).is_multiple_of(3) {
+                            "\r\n"
+                        } else {
+                            "\n"
+                        });
+                    }
+                }
+            }
+            let left = tokenize(&buffers[0]);
+            let right = tokenize(&buffers[1]);
+            assert_eq!(
+                capture_line_diff(&left, &right),
+                capture_diff_slices(Algorithm::RawMyers, &left, &right),
+                "interning changed operations for {buffers:?}"
+            );
+        }
+    }
+
+    #[test]
     fn tokenize_strips_single_trailing_cr_for_compare_only() {
         let toks = tokenize("a\r\n");
         assert_eq!(toks.len(), 1);
@@ -403,6 +470,33 @@ mod tests {
         let (lr, rr) = roles("a\nb\nc", "a\nb\nc");
         assert_eq!(lr, vec![Role::Equal, Role::Equal, Role::Equal]);
         assert_eq!(rr, vec![Role::Equal, Role::Equal, Role::Equal]);
+    }
+
+    #[test]
+    fn expensive_repetitive_diff_preserves_exact_equal_lines() {
+        // Similar 3.2's heuristic Myers path keeps only 141 equal lines in
+        // this fixture. Preserve the previous shortest edit script (144)
+        // so a dependency update does not add spurious changed lines.
+        let mut state = 15_690_471_396_791_370_040_u64;
+        let mut buffer = || {
+            (0..512)
+                .map(|_| {
+                    state = state
+                        .wrapping_mul(6_364_136_223_846_793_005)
+                        .wrapping_add(1);
+                    format!("{}\n", (state >> 32) % 32)
+                })
+                .collect::<String>()
+        };
+        let left = buffer();
+        let right = buffer();
+        let (left_roles, right_roles) = roles(&left, &right);
+        for pane_roles in [left_roles, right_roles] {
+            assert_eq!(
+                pane_roles.iter().filter(|&&r| r == Role::Equal).count(),
+                144
+            );
+        }
     }
 
     #[test]
@@ -841,7 +935,7 @@ mod tests {
         // Gather every paired Changed line pair by replaying Myers: we
         // re-diff and tap into the Replace branches directly so the
         // measurement covers only `compute_inline_emphasis` calls.
-        let ops = capture_diff_slices(Algorithm::Myers, &la, &rb);
+        let ops = capture_diff_slices(Algorithm::RawMyers, &la, &rb);
         let mut pairs: Vec<(&[u8], &[u8])> = Vec::new();
         for op in ops {
             if let DiffOp::Replace {

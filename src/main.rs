@@ -22,7 +22,7 @@ fn main() -> eframe::Result<()> {
 
     let bench_config = bench::parse_args(std::env::args());
     // In bench mode, disable vsync. The documented benchmark boundary is
-    // app-controlled (end of `App::update()`), not GPU present; leaving
+    // app-controlled (end of `App::ui()`), not GPU present; leaving
     // vsync on caps the inter-frame interval at the display refresh period
     // (~16.7 ms at 60 Hz), which edit_latency counts as wall clock between
     // t0 (in frame N) and t1 (in frame N+1). Turning it off lets frames
@@ -58,9 +58,9 @@ fn native_options(vsync: bool) -> eframe::NativeOptions {
             .with_decorations(false)
             .with_icon(window_icon()),
         persist_window: false,
-        vsync,
         ..Default::default()
     };
+    options.glow_options.vsync = vsync;
     configure_linux_graphics(&mut options);
     options
 }

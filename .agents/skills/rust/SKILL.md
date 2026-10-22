@@ -36,7 +36,7 @@ If a requested change conflicts with an architecture invariant, treat it as a pr
 
 ## Product Contract
 
-- Rust desktop app built on `eframe 0.33` / `egui 0.33`
+- Rust desktop app built on `eframe 0.37` / `egui 0.37`
 - Supported release targets: Windows 10/11 x64, Ubuntu 22.04 x64, Ubuntu 24.04 x64, and macOS 26 arm64
 - One release artifact per target platform, containing one native app executable
 - Exactly two editable panes in a fixed 50/50 split
@@ -45,7 +45,7 @@ If a requested change conflicts with an architecture invariant, treat it as a pr
 - Async diffing is always on; the UI must not block on recompute
 - The app must not intercept pane keyboard, pointer, clipboard, or scroll-wheel events
 - Keep platform-specific behavior explicit and target-gated; do not add accidental Windows-only assumptions to shared code
-- Scroll sync reads `ScrollAreaOutput.state.offset` and feeds the clamped offset into the opposite pane's next `ScrollArea::scroll_offset(...)`
+- Scroll sync reads `ScrollAreaOutput.state.clamped_offset()` and feeds the clamped offset into the opposite pane's next `ScrollArea::scroll_offset(...)`
 - Diff styling is pane-scoped through `AppTheme`: left rose family, right green family, equal lines transparent
 
 ## Code Map
@@ -107,7 +107,7 @@ If a requested change conflicts with an architecture invariant, treat it as a pr
 
 ### Platform and build configuration
 
-- `Cargo.toml` keeps `eframe` target-specific: Windows and macOS use `default_fonts` + `glow`; Linux adds `wayland` + `x11`. Keep new platform features explicit instead of widening every target by accident.
+- `Cargo.toml` keeps `eframe` target-specific: Windows and macOS use `clipboard` + `default_fonts` + `glow`; Linux adds `wayland` + `x11`. Keep new platform features explicit instead of widening every target by accident.
 - `build.rs` embeds the Windows shell icon through `winresource` only for Windows targets; non-Windows builds must not require Windows resource tooling.
 - The custom title bar and `with_decorations(false)` behavior are part of the app contract, but resize/titlebar affordances can vary by platform. Gate OS-specific fixes tightly.
 - GitHub workflows are split by OS target for CI and release builds. When touching target dependencies or platform code, check each supported target workflow instead of assuming coverage from one local OS.

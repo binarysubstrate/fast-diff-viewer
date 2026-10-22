@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "label": "v1.1.0-release-gate",
+  "date": "2026-10-22",
+  "date_source": "benchmark_run_timestamp",
+  "commit": "e0d3a1d2b461cc9c4e808fcc7b6b1b0500f2b770",
+  "short_commit": "e0d3a1d",
+  "source_commit": "e0d3a1d2b461cc9c4e808fcc7b6b1b0500f2b770",
+  "source_path": "bench/results",
+  "migrated_from": null,
+  "version": "1.1.0",
+  "rust_version": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.1\nLLVM version: 23.1.1",
+  "target": "x86_64-pc-windows-msvc",
+  "command": "cargo run --release --locked --example bench_runner -- --scenario all",
+  "gate_mode": "auto",
+  "machine_note": "SpringTime; Windows 10 Pro 10.0.19045 x64; Intel Core i7-6850K 3.60 GHz, 6 cores / 12 logical processors; NVIDIA GeForce GTX 1080 Ti, driver 32.0.15.8157.",
+  "notes": "All repository-default gates passed on exact source commit e0d3a1d2b461cc9c4e808fcc7b6b1b0500f2b770. Clean isolated checkout; Rust 1.99.1 release bench build with RUSTFLAGS=-D warnings and no diagnostic instrumentation. WTS SessionInfoEx reports UNLOCK before and after. Launcher Normal priority (32), unrestricted affinity 4095 (all 12 logical processors), unchanged default Balanced power scheme 381b4222-f694-41f0-9685-ff5bb260df2e. No priority, affinity, power settings, benchmark thresholds or injection timing changes. Cold median 261.442 ms / worst 323.555 ms; edit median 11155 us / p95 15847 us; large worst 157154 us / settle 376 ms. After recording CSVs, the normal non-bench release build passed with warnings denied. Native clipboard paste into both panes and exact Ctrl+C readback of selected text passed; the app-only screenshot confirms equal-width panes, readable selection and correct line/inline colors. Original clipboard restored and own app closed. EXE FileVersion/ProductVersion 1.1.0; numeric version 1.1.0.0."
+}

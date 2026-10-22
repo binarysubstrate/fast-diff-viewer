@@ -22,9 +22,11 @@ the rasterizer.
 
 ## Regenerating
 
-After changing `fast-diff-viewer.svg`, the shipping (`Graphite`) inline palette
-in `src/theme.rs`, or the `REMOVED_INLINE` / `ADDED_INLINE` /
-`RING_INK` constants in `scripts/gen_icon.rs`:
+The rasterizer draws the mark from Rust geometry and color constants; it does
+not parse `fast-diff-viewer.svg`. After changing the SVG or the shipping
+(`Graphite`) inline palette in `src/theme.rs`, update the matching geometry
+and `REMOVED_INLINE` / `ADDED_INLINE` / `RING_INK` constants in
+`scripts/gen_icon.rs`, then run:
 
 ```text
 cargo run --example gen_icon --release
@@ -36,7 +38,7 @@ they stay in lockstep.
 
 ## Colorway rationale
 
-The in-app brand mark painted by `draw_brand_mark` (`src/main.rs`) is
+The in-app brand mark painted by `draw_brand_mark` (`src/app.rs`) is
 theme-reactive: it mirrors the active theme's `removed_inline` /
 `added_inline` pair. Platform package icons are static, so Explorer, Finder,
 desktop launchers, taskbars, and Alt-Tab surfaces render one fixed image

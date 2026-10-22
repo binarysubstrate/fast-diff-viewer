@@ -17,11 +17,11 @@ jobs:
       RUSTFLAGS: -D warnings
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Keep in sync with `rust-version` in Cargo.toml.
-      - name: Install Rust 1.94.1 (repo target)
-        uses: dtolnay/rust-toolchain@1.94.1
+      - name: Install Rust 1.99.1 (repo target)
+        uses: dtolnay/rust-toolchain@1.99.1
         with:
           components: rustfmt, clippy
 
@@ -34,7 +34,7 @@ jobs:
             pkg-config
 
       - name: Cache cargo registry / git / target
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
