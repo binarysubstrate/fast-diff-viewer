@@ -45,7 +45,7 @@ If a requested change conflicts with an architecture invariant, treat it as a pr
 - Async diffing is always on; the UI must not block on recompute
 - The app must not intercept pane keyboard, pointer, clipboard, or scroll-wheel events
 - Keep platform-specific behavior explicit and target-gated; do not add accidental Windows-only assumptions to shared code
-- Scroll sync reads `ScrollAreaOutput.state.offset` and feeds the clamped offset into the opposite pane's next `ScrollArea::scroll_offset(...)`
+- Scroll sync reads `ScrollAreaOutput.state.clamped_offset()` and feeds the clamped offset into the opposite pane's next `ScrollArea::scroll_offset(...)`
 - Diff styling is pane-scoped through `AppTheme`: left rose family, right green family, equal lines transparent
 
 ## Code Map

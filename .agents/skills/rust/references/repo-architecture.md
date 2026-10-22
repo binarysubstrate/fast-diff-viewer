@@ -9,7 +9,7 @@
 - No persistence of window state, buffers, theme choice, or config
 - Custom title bar, but no custom interception of pane typing, selection, pointer, clipboard, or scroll-wheel behavior
 - Platform-specific behavior should be explicit and target-gated; shared code should avoid accidental Windows-only assumptions
-- Scroll synchronization reads `ScrollAreaOutput.state.offset` and feeds clamped offsets back through `ScrollArea::scroll_offset(...)`
+- Scroll synchronization reads `ScrollAreaOutput.state.clamped_offset()` and feeds clamped offsets back through `ScrollArea::scroll_offset(...)`
 - Pane-scoped diff palette: left rose family, right green family, equal lines transparent
 - `src/main.rs` owns entrypoint/`NativeOptions` setup; `src/app.rs` owns `App`, pane state, and the eframe `App::ui()` render callback.
 - `Cargo.toml` owns target-specific `eframe` feature sets; `build.rs` owns Windows PE icon embedding and must stay non-Windows safe.

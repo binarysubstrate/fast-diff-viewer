@@ -24,7 +24,7 @@ diffing, pane-scoped coloring, synchronized scrolling, and no persisted state.
 - The panes are stock `TextEdit::multiline` widgets. The app does not
   intercept or consume keyboard, pointer, clipboard, or scroll-wheel events.
 - Scroll offset is synchronized between panes by reading
-  `ScrollAreaOutput.state.offset` and feeding the clamped value into the
+  `ScrollAreaOutput.state.clamped_offset()` and feeding the clamped value into the
   opposite pane's next `ScrollArea::scroll_offset()` call.
 - No persistence of window position, pane buffers, theme choice, or other
   cross-launch state.
