@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "label": "v1.1.1-release-approved-exception",
+  "date": "2026-10-22",
+  "date_source": "benchmark_run_timestamp",
+  "commit": "a3d1800bca124cce8f40c2bdfcb5f3aa1d7433da",
+  "short_commit": "a3d1800",
+  "source_commit": "a3d1800bca124cce8f40c2bdfcb5f3aa1d7433da",
+  "source_path": "bench/results",
+  "migrated_from": null,
+  "version": "1.1.1",
+  "rust_version": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.1\nLLVM version: 23.1.1",
+  "target": "x86_64-pc-windows-msvc",
+  "command": "cargo run --release --locked --example bench_runner -- --scenario all",
+  "gate_mode": "auto",
+  "machine_note": "SpringTime development workstation; Windows 10 Pro 10.0.19045 x64; Intel Core i7-6850K 3.60 GHz, 6 cores / 12 logical processors; NVIDIA GeForce GTX 1080 Ti, driver 32.0.15.8157.",
+  "notes": "Observed repository-default gate FAILED: large-paste frame 1 took 168316 us, exceeding the unchanged 160000 us per-frame limit. All other gates passed: cold median 232.490 ms / worst 280.689 ms; edit median 11730 us / p95 18381 us; large-paste settle 380 ms. After reviewing these results, the maintainer approved releasing v1.1.1 and reported that the desktop was not completely idle. This is an approved release exception with background desktop activity, not a passing or idle-reference benchmark. Exact source a3d1800bca124cce8f40c2bdfcb5f3aa1d7433da; Rust 1.99.1 release bench build with RUSTFLAGS=-D warnings and no diagnostic instrumentation. Run 2026-10-22T19:16:11.9071332Z through 2026-10-22T19:16:31.3378844Z. WTS SessionInfoEx reported UNLOCK and input desktop Default with screensaver off before and after. Launcher Normal priority, unrestricted affinity 4095 (all 12 logical processors), unchanged Balanced power scheme 381b4222-f694-41f0-9685-ff5bb260df2e. No priority, affinity, power, threshold, workload or injection timing changes. Original CSVs retained intact; no rerun performed for this exception. The separate normal release app passed G1-G10 visual checks, long top/bottom views, native word/blank/split/join edits, synchronized scrolling and exact selected-text clipboard readback; independent design review accepted all 20 captures. EXE FileVersion/ProductVersion 1.1.1.",
+  "gate_result": "failed",
+  "release_disposition": "maintainer-approved exception",
+  "normal_binary_sha256": "d8cbadf5975da19cc97e878c643be81e826f54f15faa1d3983ddc9fe4d1cc523",
+  "bench_binary_sha256": "d1e1cc80d3c14545a537d376123b81cebd9230d28e7afc0a1ae94d4a53819a97"
+}

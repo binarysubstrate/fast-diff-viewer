@@ -67,3 +67,35 @@ After the first paragraph is split, sections 10–19 still align with their
 counterparts. Only `approved` / `pending` receive stronger word emphasis:
 
 ![G9 bottom: localized word edits remain aligned through Section 19](large-region-bottom-after.png)
+
+## Native Windows Validation
+
+Captured on 2026-10-22 on the Windows 10 Pro x64 reference workstation
+(10.0.19045), using the normal v1.1.1 application at 1200 × 720, built from
+`a3d1800bca124cce8f40c2bdfcb5f3aa1d7433da`. Its runtime source matches the
+`c68ebd9` Linux candidate above; the later commit adds review documentation.
+The native executable's SHA-256 is
+`d8cbadf5975da19cc97e878c643be81e826f54f15faa1d3983ddc9fe4d1cc523`.
+
+All G1–G10 inputs passed clipboard round trips after CRLF normalization.
+Interactive word edits, blank line edits, splits, joins, scrolling, and
+copying selected text with Ctrl+C also passed. The fresh set contains 20
+screenshots: ten G cases, two bottom views of the long cases, and eight
+interactive states.
+The driver verified the app remained foreground and the desktop unlocked.
+Native design review disposition: **approved for this source and executable**.
+A separate design reviewer inspected all 20 fresh screenshots. The line and
+word tints meet the acceptance criteria through Section 19 in both long
+cases; interactive edits retain correct highlights, scrolling stays aligned,
+and selected text remains visible.
+
+The two synthetic Windows examples below show unchanged `café` at a split
+boundary and localized edits through Section 19:
+
+![Windows G7: café keeps line tint while old/new receive word emphasis](windows-accented-split.png)
+
+![Windows G9 bottom: section correspondence remains intact through Section 19](windows-large-region-bottom.png)
+
+This addendum records GUI validation. The separate native performance gate
+and its evidence belong in [`bench/history/`](../../../bench/history/);
+screenshots and clipboard checks do not establish a benchmark pass.
