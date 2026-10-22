@@ -51,6 +51,9 @@ Documentation-only changes should pass the Markdown lint check:
 pnpm run lint:md
 ```
 
+Changes to diff matching or rendered highlights also need the native visual
+checks in [`docs/visual-validation.md`](docs/visual-validation.md).
+
 ## Benchmarks
 
 Pull requests that affect runtime behavior should pass the performance gate

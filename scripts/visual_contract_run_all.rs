@@ -170,6 +170,38 @@ const CASES: &[CaseDef] = &[
         left: "cat 🐱",
         right: "cat 🐶",
     },
+    // Paragraph-level acceptance cases. Review the actual highlighted words,
+    // not only the presence of red/green pixels in the captured image.
+    CaseDef {
+        id: "G1",
+        left: "The deployment report includes approved changes, current risks, release dates, test results, and the owner responsible for every follow-up action.\n\nThe migration guide describes supported platforms, required packages, database backups, rollout steps, and recovery procedures for the production application.",
+        right: "\nThe deployment report includes pending changes, current risks, release dates, test results, and the owner responsible for every follow-up action.\n\nThe migration guide describes supported platforms, required packages, database backups, rollout steps, and recovery procedures for the staging application.",
+    },
+    CaseDef {
+        id: "G2",
+        left: "\nThe deployment report includes approved changes, current risks, release dates, test results, and the owner responsible for every follow-up action.\n\nThe migration guide describes supported platforms, required packages, database backups, rollout steps, and recovery procedures for the production application.",
+        right: "The deployment report includes pending changes, current risks, release dates, test results, and the owner responsible for every follow-up action.\n\nThe migration guide describes supported platforms, required packages, database backups, rollout steps, and recovery procedures for the staging application.",
+    },
+    CaseDef {
+        id: "G3",
+        left: "Shared heading\nReview the existing records.\nArchive the obsolete screenshots.\nKeep the final deployment, financial, security and operational acceptance records; remove intermediate attempts and duplicate screenshots.",
+        right: "Shared heading\nArchive the obsolete screenshots.\nReview the existing records.\nKeep the final deployment, financial, security and operational acceptance records; remove intermediate attempts and duplicate screenshots, and tracking.",
+    },
+    CaseDef {
+        id: "G4",
+        left: "The deployment report includes approved changes, current risks, release dates, test results, and the owner responsible for every follow-up action.\nShared footer",
+        right: "The deployment report includes pending changes, current risks,\nrelease dates, test results, and the owner responsible for every follow-up action.\nShared footer",
+    },
+    CaseDef {
+        id: "G5",
+        left: "The deployment report includes approved changes, current risks,\nrelease dates, test results, and the owner responsible for every follow-up action.\nShared footer",
+        right: "The deployment report includes pending changes, current risks, release dates, test results, and the owner responsible for every follow-up action.\nShared footer",
+    },
+    CaseDef {
+        id: "G6",
+        left: "The engineering team documented network settings, firewall rules, service accounts, deployment logs, and database credentials needed for the production environment.",
+        right: "A village bakery offered fresh bread, seasonal pastries, roasted coffee, homemade jam, and friendly conversation for travelers arriving early in the morning.",
+    },
 ];
 
 #[derive(Debug)]

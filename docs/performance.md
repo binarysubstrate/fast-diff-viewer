@@ -71,31 +71,42 @@ Important invariant:
 
 Owner: [`src/diff.rs`](../src/diff.rs)
 
-`assign_roles_and_emphasis(left, right)` interns complete line tokens into
-integer IDs for the current job, then calls `similar::capture_diff_slices`
-with `Algorithm::RawMyers` over those IDs. In `similar` 3.2, `RawMyers`
-preserves the exact shortest-edit-script behavior previously exposed as
-`Myers`; the new `Myers` variant uses a bounded heuristic search. Both line
-and word diffs use `RawMyers` to preserve the application's existing matching
-behavior. The resulting ops are mapped to per-pane roles:
+`capture_line_diff(left, right)` interns complete line tokens into integer IDs
+for the current job, then calls `similar::capture_diff_slices` with
+`Algorithm::RawMyers` over those IDs. In `similar` 3.2, `RawMyers` preserves
+the exact shortest-edit-script behavior previously exposed as `Myers`; the
+new `Myers` variant uses a bounded heuristic search.
 
-- `Equal` maps to equal roles on both sides.
-- `Delete` marks left-only lines as `AddedOrRemoved`.
-- `Insert` marks right-only lines as `AddedOrRemoved`.
-- `Replace` pairs the first `min(left_len, right_len)` lines and computes
-  their word diffs. Pairs that pass the similarity guard are `Changed`;
-  unrelated substantial lines are `AddedOrRemoved` on both sides without
-  inline emphasis. The longer side's remainder is `AddedOrRemoved`.
+`assign_roles_and_emphasis()` keeps exact nonblank matches as `Equal` anchors.
+Blank matches, including ASCII-whitespace-only lines, stay inside the regions
+between those anchors. They cannot force edited paragraphs into the wrong
+pairing merely because both paragraphs have a blank separator.
+
+Within a bounded region, an order-preserving dynamic program selects related
+one-to-one line pairs or one-to-two / two-to-one split and join pairs. Split
+and join candidates contain adjacent nonblank lines only. Candidate scores
+use matched token content, excluding ASCII punctuation and whitespace from
+the byte counts. A candidate needs more than 40% shared content and must pass
+the substantial-line similarity guard described below.
+
+Selected related pairs become `Changed`, with the pane's line tint and word
+emphasis. Exact one-to-one pairs become `Equal`; unrelated substantial pairs
+and excess lines remain `AddedOrRemoved`, with line tint only. Residual lines
+are paired positionally while skipping unmatched blank lines. This also
+preserves ordinary short-line edits that share no complete word token.
 
 Why it is fast:
 
 - Myers runs at line granularity, not character granularity.
 - Interning compares full token content and termination flags, including when
-  hashes collide. The diff then compares integer IDs instead of repeatedly
-  comparing line bytes, without changing the resulting operations.
-- The app computes word diffs only for paired lines inside a `Replace` op,
-  retaining inline emphasis only for pairs classified as `Changed`.
-- Pure insert/delete lines skip word-level diffing entirely.
+  hashes collide. The initial exact diff compares integer IDs instead of
+  repeatedly comparing line bytes, without changing its operations.
+- Identical regions and singleton replacements bypass the alignment search.
+- Refinement is limited to 64 lines per side and 16 KiB of combined content
+  per region. Candidate word comparisons share an estimated work budget of
+  262,144 units across the entire job, checked before a region is refined.
+- Regions outside those limits use guarded positional pairing with unmatched
+  blank lines skipped. A region with an empty side needs no word diff.
 
 Tradeoff:
 
@@ -105,29 +116,41 @@ Tradeoff:
 - Interning allocates a map and an ID sequence proportional to the current
   job's line count. They are discarded when the line diff completes; no
   cross-job cache retains earlier buffers.
+- Content alignment allocates a bounded score table and comparison-only text
+  for split/join candidates. Larger or more expensive regions retain the
+  positional fallback rather than searching without a limit.
 
 ## Inline Emphasis
 
 Owner: [`src/diff.rs`](../src/diff.rs)
 
-`paired_line_diff(left_line, right_line)` tokenizes one candidate line pair
+`paired_line_diff(left_line, right_line)` tokenizes a candidate line or block pair
 into maximal runs of ASCII word bytes (alphanumeric or underscore) and
 non-word bytes, then runs the same Myers diff at token granularity. It returns
 byte ranges for deleted tokens on the left and inserted tokens on the right,
-plus word counts and a similarity score. Adjacent spans are merged.
+plus word counts, a similarity score, and the content-alignment score.
+Adjacent spans are merged.
 
-When both lines contain at least 12 tokens with ASCII alphanumeric bytes and
+When both sides contain at least 12 tokens with ASCII alphanumeric bytes and
 their similarity is below 0.4, the pair is treated as unrelated. Both lines
 receive line tint only, avoiding scattered emphasis when a blank-line anchor
 pairs different paragraphs. Similarity is twice the byte count of all matched
 tokens, including non-word tokens, divided by the combined line byte length.
 Short lines retain ordinary word diffing, so one-word edits still receive
-inline emphasis.
+inline emphasis. This guard remains separate from the content score used to
+choose alignment candidates.
+
+For a split or join, `block_text()` joins the candidate lines with synthetic
+newlines for comparison only. `project_spans()` maps the resulting emphasis
+back into each original line's content range and excludes those synthetic
+separators. Buffer text, canonical segmentation, and CRLF normalization are
+unchanged. Related split/join lines retain line tint while unchanged words
+avoid the stronger inline tint.
 
 Why it is fast:
 
-- It runs only for paired `Replace` lines and skips tokenization when their
-  content is identical.
+- It skips tokenization when compared content is identical. Candidate work
+  is bounded by the alignment limits above.
 - Tokenization is one linear pass over each changed line.
 - Word tokens borrow slices of the worker-owned text, avoiding a separate
   allocation and byte copy for every word and separator run.

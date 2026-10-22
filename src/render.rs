@@ -428,6 +428,88 @@ mod tests {
         (vec![Role::Changed; count], vec![Vec::new(); count])
     }
 
+    fn graphite_diff_jobs(left: &str, right: &str) -> (LayoutJob, LayoutJob) {
+        let (lr, rr, le, re) = crate::diff::assign_roles_and_emphasis(
+            &crate::diff::tokenize(left),
+            &crate::diff::tokenize(right),
+        );
+        let theme = AppTheme::graphite();
+        let build = |text: &str, roles: &[Role], emphasis: &[Vec<Range<usize>>], pane| {
+            let stamp = stamp(1, text);
+            build_layout_job(
+                text,
+                roles,
+                emphasis,
+                LayoutPaint {
+                    identity: identity(stamp, stamp),
+                    pane,
+                    font_id: mono(),
+                    text_color: theme.ink,
+                    theme: &theme,
+                },
+            )
+        };
+        (
+            build(left, &lr, &le, PaneSide::Left),
+            build(right, &rr, &re, PaneSide::Right),
+        )
+    }
+
+    fn assert_phrase_background(job: &LayoutJob, phrase: &str, expected: Color32) {
+        let start = job.text.find(phrase).expect("fixture phrase must exist");
+        for byte in start..start + phrase.len() {
+            let section = job
+                .sections
+                .iter()
+                .find(|section| section.byte_range.contains(&ByteIndex(byte)))
+                .expect("every displayed byte must have a text format");
+            assert_eq!(
+                section.format.background, expected,
+                "wrong paint for {phrase:?} at byte {byte}"
+            );
+        }
+    }
+
+    #[test]
+    fn actual_diff_keeps_word_contrast_across_an_extra_blank_line() {
+        let before = "The deployment report includes approved changes, current risks, release dates, test results, and the owner responsible for every follow-up action.\n\nThe migration guide describes supported platforms, required packages, database backups, rollout steps, and recovery procedures for the production application.";
+        let after = before
+            .replace("approved", "pending")
+            .replace("production", "staging");
+        let theme = AppTheme::graphite();
+        for (left, right) in [
+            (before.to_owned(), format!("\n{after}")),
+            (format!("\n{before}"), after),
+        ] {
+            let (left_job, right_job) = graphite_diff_jobs(&left, &right);
+            assert_eq!(left_job.text, left);
+            assert_eq!(right_job.text, right);
+            for word in ["approved", "production"] {
+                assert_phrase_background(&left_job, word, theme.removed_inline);
+            }
+            for word in ["pending", "staging"] {
+                assert_phrase_background(&right_job, word, theme.added_inline);
+            }
+            for phrase in ["The deployment report", "The migration guide"] {
+                assert_phrase_background(&left_job, phrase, theme.removed_line);
+                assert_phrase_background(&right_job, phrase, theme.added_line);
+            }
+        }
+    }
+
+    #[test]
+    fn actual_diff_does_not_lose_a_word_edit_after_a_reordered_line() {
+        let left = "Shared heading\nReview the existing records.\nArchive the obsolete screenshots.\nKeep the final deployment, financial, security and operational acceptance records; remove intermediate attempts and duplicate screenshots.";
+        let right = "Shared heading\nArchive the obsolete screenshots.\nReview the existing records.\nKeep the final deployment, financial, security and operational acceptance records; remove intermediate attempts and duplicate screenshots, and tracking.";
+        let (left_job, right_job) = graphite_diff_jobs(left, right);
+        let theme = AppTheme::graphite();
+        assert_phrase_background(&left_job, "Shared heading", Color32::TRANSPARENT);
+        assert_phrase_background(&right_job, "Shared heading", Color32::TRANSPARENT);
+        assert_phrase_background(&right_job, "tracking", theme.added_inline);
+        assert_phrase_background(&right_job, "Keep the final deployment", theme.added_line);
+        assert_phrase_background(&left_job, "Keep the final deployment", theme.removed_line);
+    }
+
     #[test]
     fn empty_buffer_produces_empty_job() {
         let job = build_job("", &[], &[], PaneSide::Left);

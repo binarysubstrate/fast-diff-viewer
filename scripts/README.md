@@ -61,6 +61,9 @@ poetry run python -m pyright --project pyrightconfig.json scripts/benchmark-plot
 
 ## Visual Capture
 
+Highlight acceptance criteria and the focused native cases are documented in
+[`docs/visual-validation.md`](../docs/visual-validation.md).
+
 The capture, drive-case, and run-all helpers require Windows at runtime. They
 launch the release binary when needed, drive pane content, capture the app
 window, and close it. The analyze, classify, and probe helpers read existing
