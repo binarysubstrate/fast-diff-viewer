@@ -71,8 +71,9 @@ Important invariant:
 
 Owner: [`src/diff.rs`](../src/diff.rs)
 
-`assign_roles_and_emphasis(left, right)` calls `similar::capture_diff_slices`
-with `Algorithm::RawMyers` over the line tokens. In `similar` 3.2, `RawMyers`
+`assign_roles_and_emphasis(left, right)` interns complete line tokens into
+integer IDs for the current job, then calls `similar::capture_diff_slices`
+with `Algorithm::RawMyers` over those IDs. In `similar` 3.2, `RawMyers`
 preserves the exact shortest-edit-script behavior previously exposed as
 `Myers`; the new `Myers` variant uses a bounded heuristic search. Both line
 and word diffs use `RawMyers` to preserve the application's existing matching
@@ -89,6 +90,9 @@ behavior. The resulting ops are mapped to per-pane roles:
 Why it is fast:
 
 - Myers runs at line granularity, not character granularity.
+- Interning compares full token content and termination flags, including when
+  hashes collide. The diff then compares integer IDs instead of repeatedly
+  comparing line bytes, without changing the resulting operations.
 - The app computes word diffs only for paired lines inside a `Replace` op,
   retaining inline emphasis only for pairs classified as `Changed`.
 - Pure insert/delete lines skip word-level diffing entirely.
@@ -98,6 +102,9 @@ Tradeoff:
 - Myers has good behavior when edits are small relative to the input, which
   matches the editor fixtures. Completely unrelated large files are still a
   harder case for any exact sequence diff.
+- Interning allocates a map and an ID sequence proportional to the current
+  job's line count. They are discarded when the line diff completes; no
+  cross-job cache retains earlier buffers.
 
 ## Inline Emphasis
 
@@ -122,6 +129,8 @@ Why it is fast:
 - It runs only for paired `Replace` lines and skips tokenization when their
   content is identical.
 - Tokenization is one linear pass over each changed line.
+- Word tokens borrow slices of the worker-owned text, avoiding a separate
+  allocation and byte copy for every word and separator run.
 - It reuses the existing `similar` dependency instead of introducing a second
   diff engine.
 
