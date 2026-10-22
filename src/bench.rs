@@ -40,10 +40,10 @@ pub static BENCH_T0: OnceLock<Instant> = OnceLock::new();
 /// `.id(LEFT_EDIT_ID)` / `.id(RIGHT_EDIT_ID)` to bypass the id-stack
 /// XOR.
 pub fn left_edit_id() -> egui::Id {
-    egui::Id::new("pane_left_edit")
+    egui::Id::unique("pane_left_edit")
 }
 pub fn right_edit_id() -> egui::Id {
-    egui::Id::new("pane_right_edit")
+    egui::Id::unique("pane_right_edit")
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

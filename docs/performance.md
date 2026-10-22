@@ -72,8 +72,11 @@ Important invariant:
 Owner: [`src/diff.rs`](../src/diff.rs)
 
 `assign_roles_and_emphasis(left, right)` calls `similar::capture_diff_slices`
-with `Algorithm::Myers` over the line tokens. The resulting ops are mapped to
-per-pane roles:
+with `Algorithm::RawMyers` over the line tokens. In `similar` 3.2, `RawMyers`
+preserves the exact shortest-edit-script behavior previously exposed as
+`Myers`; the new `Myers` variant uses a bounded heuristic search. Both line
+and word diffs use `RawMyers` to preserve the application's existing matching
+behavior. The resulting ops are mapped to per-pane roles:
 
 - `Equal` maps to equal roles on both sides.
 - `Delete` marks left-only lines as `AddedOrRemoved`.

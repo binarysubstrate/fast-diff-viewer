@@ -219,7 +219,7 @@ impl Image {
     #[cfg(test)]
     fn new_for_tests(width: u32, height: u32, fill: Rgb) -> Self {
         let mut rgba = vec![0; width as usize * height as usize * 4];
-        for pixel in rgba.chunks_exact_mut(4) {
+        for pixel in rgba.as_chunks_mut::<4>().0 {
             pixel[0] = fill.r;
             pixel[1] = fill.g;
             pixel[2] = fill.b;
@@ -259,7 +259,7 @@ fn decode_to_rgba(bytes: &[u8], color_type: png::ColorType) -> ProbeResult<Vec<u
         png::ColorType::Rgba => Ok(bytes.to_vec()),
         png::ColorType::Rgb => {
             let mut rgba = Vec::with_capacity(bytes.len() / 3 * 4);
-            for pixel in bytes.chunks_exact(3) {
+            for pixel in bytes.as_chunks::<3>().0 {
                 rgba.extend_from_slice(&[pixel[0], pixel[1], pixel[2], 255]);
             }
             Ok(rgba)
@@ -273,7 +273,7 @@ fn decode_to_rgba(bytes: &[u8], color_type: png::ColorType) -> ProbeResult<Vec<u
         }
         png::ColorType::GrayscaleAlpha => {
             let mut rgba = Vec::with_capacity(bytes.len() / 2 * 4);
-            for pixel in bytes.chunks_exact(2) {
+            for pixel in bytes.as_chunks::<2>().0 {
                 rgba.extend_from_slice(&[pixel[0], pixel[0], pixel[0], pixel[1]]);
             }
             Ok(rgba)

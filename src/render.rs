@@ -348,6 +348,7 @@ fn hash_color(h: &mut AHasher, color: Color32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use eframe::egui::text::ByteIndex;
 
     fn mono() -> FontId {
         FontId::monospace(12.0)
@@ -490,9 +491,9 @@ mod tests {
         let emph: Vec<Vec<Range<usize>>> = vec![vec![0..1]];
         let job = build_job(text, &roles, &emph, PaneSide::Left);
         assert_eq!(job.sections.len(), 2);
-        assert_eq!(job.sections[0].byte_range, 0..4);
+        assert_eq!(job.sections[0].byte_range, ByteIndex(0)..ByteIndex(4));
         assert_eq!(job.sections[0].format.background, Color32::TRANSPARENT);
-        assert_eq!(job.sections[1].byte_range, 4..7);
+        assert_eq!(job.sections[1].byte_range, ByteIndex(4)..ByteIndex(7));
         assert_eq!(job.sections[1].format.background, Color32::TRANSPARENT);
     }
 
@@ -518,9 +519,9 @@ mod tests {
         let emph: Vec<Vec<Range<usize>>> = vec![vec![1..3]];
         let job = build_job(text, &roles, &emph, PaneSide::Left);
         assert_eq!(job.sections.len(), 2);
-        assert_eq!(job.sections[0].byte_range, 0..1);
+        assert_eq!(job.sections[0].byte_range, ByteIndex(0)..ByteIndex(1));
         assert_eq!(job.sections[0].format.background, theme().removed_line);
-        assert_eq!(job.sections[1].byte_range, 1..3);
+        assert_eq!(job.sections[1].byte_range, ByteIndex(1)..ByteIndex(3));
         assert_eq!(job.sections[1].format.background, theme().removed_inline);
     }
 
@@ -548,7 +549,7 @@ mod tests {
         let job = build_job(text, &roles, &emph, PaneSide::Right);
         // A single section for the whole line carrying only the line tint.
         assert_eq!(job.sections.len(), 1);
-        assert_eq!(job.sections[0].byte_range, 0..3);
+        assert_eq!(job.sections[0].byte_range, ByteIndex(0)..ByteIndex(3));
         assert_eq!(job.sections[0].format.background, theme().added_line);
     }
 
@@ -570,11 +571,11 @@ mod tests {
         let job = build_job(text, &roles, &emph, PaneSide::Right);
         // "ab" tinted + "cd" emphasized + "ef" tinted = 3 sections.
         assert_eq!(job.sections.len(), 3);
-        assert_eq!(job.sections[0].byte_range, 0..2);
+        assert_eq!(job.sections[0].byte_range, ByteIndex(0)..ByteIndex(2));
         assert_eq!(job.sections[0].format.background, theme().added_line);
-        assert_eq!(job.sections[1].byte_range, 2..4);
+        assert_eq!(job.sections[1].byte_range, ByteIndex(2)..ByteIndex(4));
         assert_eq!(job.sections[1].format.background, theme().added_inline);
-        assert_eq!(job.sections[2].byte_range, 4..6);
+        assert_eq!(job.sections[2].byte_range, ByteIndex(4)..ByteIndex(6));
         assert_eq!(job.sections[2].format.background, theme().added_line);
     }
 
@@ -586,7 +587,7 @@ mod tests {
         let emph: Vec<Vec<Range<usize>>> = vec![vec![0..99]];
         let job = build_job(text, &roles, &emph, PaneSide::Left);
         assert_eq!(job.sections.len(), 1);
-        assert_eq!(job.sections[0].byte_range, 0..3);
+        assert_eq!(job.sections[0].byte_range, ByteIndex(0)..ByteIndex(3));
         assert_eq!(job.sections[0].format.background, theme().removed_line);
     }
 
@@ -602,9 +603,9 @@ mod tests {
         let job = build_job(text, &roles, &emph, PaneSide::Left);
         // "a" (emphasis) + "\n" (tinted tail folded with the line).
         assert_eq!(job.sections.len(), 2);
-        assert_eq!(job.sections[0].byte_range, 0..1);
+        assert_eq!(job.sections[0].byte_range, ByteIndex(0)..ByteIndex(1));
         assert_eq!(job.sections[0].format.background, theme().removed_inline);
-        assert_eq!(job.sections[1].byte_range, 1..2);
+        assert_eq!(job.sections[1].byte_range, ByteIndex(1)..ByteIndex(2));
         assert_eq!(job.sections[1].format.background, theme().removed_line);
     }
 
@@ -823,7 +824,10 @@ mod tests {
         let emph: Vec<Vec<Range<usize>>> = vec![vec![]; 5];
         let job = build_job(text, &roles, &emph, PaneSide::Left);
         assert_eq!(job.sections.len(), 1);
-        assert_eq!(job.sections[0].byte_range, 0..text.len());
+        assert_eq!(
+            job.sections[0].byte_range,
+            ByteIndex(0)..ByteIndex(text.len())
+        );
         assert_eq!(job.sections[0].format.background, Color32::TRANSPARENT);
     }
 
@@ -847,19 +851,19 @@ mod tests {
         let job = build_job(text, &roles, &emph, PaneSide::Left);
         assert_eq!(job.sections.len(), 5);
         // First Equal run spans "a\nb\n".
-        assert_eq!(job.sections[0].byte_range, 0..4);
+        assert_eq!(job.sections[0].byte_range, ByteIndex(0)..ByteIndex(4));
         assert_eq!(job.sections[0].format.background, Color32::TRANSPARENT);
         // Changed line tint + emphasis.
-        assert_eq!(job.sections[1].byte_range, 4..5);
+        assert_eq!(job.sections[1].byte_range, ByteIndex(4)..ByteIndex(5));
         assert_eq!(job.sections[1].format.background, theme().removed_line);
-        assert_eq!(job.sections[2].byte_range, 5..6);
+        assert_eq!(job.sections[2].byte_range, ByteIndex(5)..ByteIndex(6));
         assert_eq!(job.sections[2].format.background, theme().removed_inline);
         // Trailing '\n' of the Changed line is folded into the tinted tail
         // section (previously emitted as a separate neutral section).
-        assert_eq!(job.sections[3].byte_range, 6..7);
+        assert_eq!(job.sections[3].byte_range, ByteIndex(6)..ByteIndex(7));
         assert_eq!(job.sections[3].format.background, theme().removed_line);
         // Trailing Equal run spans "e\nf".
-        assert_eq!(job.sections[4].byte_range, 7..10);
+        assert_eq!(job.sections[4].byte_range, ByteIndex(7)..ByteIndex(10));
         assert_eq!(job.sections[4].format.background, Color32::TRANSPARENT);
     }
 

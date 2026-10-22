@@ -58,9 +58,9 @@ fn native_options(vsync: bool) -> eframe::NativeOptions {
             .with_decorations(false)
             .with_icon(window_icon()),
         persist_window: false,
-        vsync,
         ..Default::default()
     };
+    options.glow_options.vsync = vsync;
     configure_linux_graphics(&mut options);
     options
 }

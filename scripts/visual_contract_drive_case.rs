@@ -886,7 +886,7 @@ mod platform {
         let len = width as usize * height as usize * 4;
         let bgra = unsafe { slice::from_raw_parts(bits as *const u8, len) };
         let mut rgba = Vec::with_capacity(len);
-        for pixel in bgra.chunks_exact(4) {
+        for pixel in bgra.as_chunks::<4>().0 {
             rgba.push(pixel[2]);
             rgba.push(pixel[1]);
             rgba.push(pixel[0]);

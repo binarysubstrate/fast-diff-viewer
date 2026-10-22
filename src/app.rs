@@ -84,7 +84,7 @@ pub(crate) struct App {
     prev_left: String,
     prev_right: String,
     /// Shared scroll offset mirrored between both panes' `ScrollArea`s.
-    /// Read via `ScrollAreaOutput.state.offset` on each pane (ordinary
+    /// Read via `ScrollAreaOutput.state.clamped_offset()` on each pane (ordinary
     /// output data, not event interception) and passed back to the
     /// opposite pane through `ScrollArea::scroll_offset(...)` the next
     /// frame.
@@ -573,7 +573,7 @@ fn render_pane(
 
             // `scope_builder` returns an `InnerResponse<ScrollAreaOutput<TextEditOutput>>`.
             // Pull out the full `ScrollAreaOutput` so we can read both
-            // `state.offset` (for the sync-scroll sibling update) and
+            // `state.clamped_offset()` (for the sync-scroll sibling update) and
             // `inner` (the `TextEditOutput` the gutter needs).
             let scroll_output = ui
                 .scope_builder(egui::UiBuilder::new().max_rect(scroll_rect), |ui| {
@@ -614,7 +614,7 @@ fn render_pane(
                 })
                 .inner;
             let text_output = &scroll_output.inner;
-            let captured_scroll_offset = scroll_output.state.offset;
+            let captured_scroll_offset = scroll_output.state.clamped_offset();
             let max_scroll_offset =
                 pane_max_offset(scroll_output.content_size, scroll_output.inner_rect.size());
             let styled_paint_valid = painted_styled_for_gutter.get()
@@ -857,7 +857,7 @@ fn draw_title_bar(ui: &mut egui::Ui, theme: &AppTheme, worker_alive: bool) {
             let title_rect = ui.max_rect();
             let drag_response = ui.interact(
                 title_rect,
-                egui::Id::new("title_bar_drag"),
+                egui::Id::unique("title_bar_drag"),
                 egui::Sense::drag(),
             );
             if drag_response.drag_started() {
