@@ -81,16 +81,17 @@ fn capture_line_diff(left: &[DiffToken<'_>], right: &[DiffToken<'_>]) -> Vec<Dif
 /// Assign per-line roles for both panes.
 ///
 /// Rules:
-/// - `Equal`: both sides' corresponding segments are `Equal`.
+/// - Exact nonblank matches anchor corresponding `Equal` segments.
 /// - Pure `Delete` (left-only): left segments get `AddedOrRemoved`.
 /// - Pure `Insert` (right-only): right segments get `AddedOrRemoved`.
-/// - `Replace` of lengths `n` (left) and `m` (right): first `min(n, m)`
-///   segments on each side are `Changed`; the remainder on the longer side
-///   is `AddedOrRemoved`.
+/// - Changed regions spanning blank anchors use bounded content alignment,
+///   including single-line splits/joins. Plausible pairs become `Changed`
+///   with word emphasis; unrelated substantial pairs remain line-only.
+/// - Unaligned residuals use positional pairing while skipping unmatched
+///   blank lines. Excess lines stay `AddedOrRemoved`.
 /// - Empty-pane rule: diffing anything against the empty pane degenerates to
 ///   a single `Delete` (or `Insert`), so every line on the non-empty side is
-///   `AddedOrRemoved`. No special case needed — the Delete/Insert branches
-///   above already produce that result.
+///   `AddedOrRemoved`.
 ///
 /// Post-condition: `left_roles.len() == left.len()` and
 /// `right_roles.len() == right.len()`. Callers that want the
@@ -114,73 +115,411 @@ pub fn assign_roles_and_emphasis(
     left: &[DiffToken<'_>],
     right: &[DiffToken<'_>],
 ) -> RolesAndEmphasis {
-    let mut left_roles = vec![Role::Equal; left.len()];
-    let mut right_roles = vec![Role::Equal; right.len()];
-    let mut left_emphasis: Vec<Vec<Range<usize>>> = vec![Vec::new(); left.len()];
-    let mut right_emphasis: Vec<Vec<Range<usize>>> = vec![Vec::new(); right.len()];
-    let ops = capture_line_diff(left, right);
-    for op in ops {
-        match op {
-            DiffOp::Equal {
-                old_index,
-                new_index,
-                len,
-            } => {
-                for i in 0..len {
-                    left_roles[old_index + i] = Role::Equal;
-                    right_roles[new_index + i] = Role::Equal;
+    let mut output = (
+        vec![Role::AddedOrRemoved; left.len()],
+        vec![Role::AddedOrRemoved; right.len()],
+        vec![Vec::new(); left.len()],
+        vec![Vec::new(); right.len()],
+    );
+    let mut remaining_work = MAX_ALIGNMENT_WORK;
+    let mut remaining_lookahead_bytes = left
+        .iter()
+        .chain(right)
+        .fold(0usize, |total, line| {
+            total.saturating_add(line.content.len().saturating_add(1))
+        })
+        .saturating_mul(4);
+    let mut left_start = 0;
+    let mut right_start = 0;
+    for op in capture_line_diff(left, right) {
+        if let DiffOp::Equal {
+            old_index,
+            new_index,
+            len,
+        } = op
+        {
+            for offset in 0..len {
+                let li = old_index + offset;
+                let ri = new_index + offset;
+                // A blank separator is too weak an anchor to decide which
+                // edited paragraphs correspond. Keep it inside the region.
+                if is_blank(left[li]) {
+                    continue;
                 }
+                align_region(
+                    left,
+                    right,
+                    left_start..li,
+                    right_start..ri,
+                    &mut output,
+                    &mut remaining_work,
+                    &mut remaining_lookahead_bytes,
+                );
+                output.0[li] = Role::Equal;
+                output.1[ri] = Role::Equal;
+                left_start = li + 1;
+                right_start = ri + 1;
             }
-            DiffOp::Delete {
-                old_index, old_len, ..
-            } => {
-                for i in 0..old_len {
-                    left_roles[old_index + i] = Role::AddedOrRemoved;
+        }
+    }
+    align_region(
+        left,
+        right,
+        left_start..left.len(),
+        right_start..right.len(),
+        &mut output,
+        &mut remaining_work,
+        &mut remaining_lookahead_bytes,
+    );
+    output
+}
+
+fn is_blank(token: DiffToken<'_>) -> bool {
+    token.content.iter().all(u8::is_ascii_whitespace)
+}
+
+// Refinement runs only between exact nonblank anchors. Line/byte caps apply
+// per region; the candidate word-comparison budget is shared by the whole job.
+const MAX_ALIGNMENT_LINES: usize = 64;
+const MAX_ALIGNMENT_BYTES: usize = 16 * 1024;
+const MAX_ALIGNMENT_WORK: usize = 262_144;
+
+#[derive(Clone, Copy, Default)]
+enum AlignmentStep {
+    #[default]
+    SkipLeft,
+    SkipRight,
+    Pair(usize, usize),
+}
+
+struct BlockPair {
+    left: Range<usize>,
+    right: Range<usize>,
+}
+
+/// Concatenation is comparison-only; ranges map spans back to original lines.
+fn block_text(lines: &[DiffToken<'_>]) -> (Vec<u8>, Vec<Range<usize>>) {
+    let mut text = Vec::new();
+    let mut ranges = Vec::with_capacity(lines.len());
+    for (index, line) in lines.iter().enumerate() {
+        if index > 0 {
+            // A hard wrap stands for a word separator during comparison.
+            // Using a newline here would attach it to adjacent non-ASCII
+            // runs and falsely emphasize an unchanged accent or CJK text.
+            text.push(b' ');
+        }
+        let start = text.len();
+        text.extend_from_slice(line.content);
+        ranges.push(start..text.len());
+    }
+    (text, ranges)
+}
+
+fn block_diff(left: &[DiffToken<'_>], right: &[DiffToken<'_>]) -> PairedLineDiff {
+    if left.len() == 1 && right.len() == 1 {
+        paired_line_diff(left[0].content, right[0].content)
+    } else {
+        paired_line_diff(&block_text(left).0, &block_text(right).0)
+    }
+}
+
+fn candidate_allowed(left: &[DiffToken<'_>], right: &[DiffToken<'_>]) -> bool {
+    // Splits/joins never swallow a blank paragraph separator. Blank lines
+    // are paired separately after meaningful content establishes alignment.
+    left.iter().chain(right).all(|line| !is_blank(*line))
+}
+
+fn refined_pairs(
+    left: &[DiffToken<'_>],
+    right: &[DiffToken<'_>],
+    remaining_work: &mut usize,
+) -> Option<Vec<BlockPair>> {
+    if left.len() > MAX_ALIGNMENT_LINES
+        || right.len() > MAX_ALIGNMENT_LINES
+        || left
+            .iter()
+            .chain(right)
+            .map(|line| line.content.len())
+            .sum::<usize>()
+            > MAX_ALIGNMENT_BYTES
+    {
+        return None;
+    }
+    let left_words: Vec<_> = left
+        .iter()
+        .map(|line| word_tokens(line.content).0.len())
+        .collect();
+    let right_words: Vec<_> = right
+        .iter()
+        .map(|line| word_tokens(line.content).0.len())
+        .collect();
+    let mut work = 0usize;
+    // Charge before running any candidate diff, so oversized regions take
+    // the fallback without paying for a partially completed search.
+    for i in 1..=left.len() {
+        for j in 1..=right.len() {
+            for (ln, rn) in [(1, 1), (1, 2), (2, 1)] {
+                if i < ln || j < rn || !candidate_allowed(&left[i - ln..i], &right[j - rn..j]) {
+                    continue;
                 }
-            }
-            DiffOp::Insert {
-                new_index, new_len, ..
-            } => {
-                for i in 0..new_len {
-                    right_roles[new_index + i] = Role::AddedOrRemoved;
-                }
-            }
-            DiffOp::Replace {
-                old_index,
-                old_len,
-                new_index,
-                new_len,
-            } => {
-                let paired = old_len.min(new_len);
-                for i in 0..paired {
-                    let li = old_index + i;
-                    let ri = new_index + i;
-                    let diff = paired_line_diff(left[li].content, right[ri].content);
-                    if diff.is_unrelated_pairing() {
-                        // The line-level diff paired two unrelated lines (a
-                        // blank-line anchor spanning a paragraph boundary is
-                        // the classic cause). Painting a word-level `Changed`
-                        // here would scatter nonsense emphasis, so fall back
-                        // to a plain removal + addition with no emphasis.
-                        left_roles[li] = Role::AddedOrRemoved;
-                        right_roles[ri] = Role::AddedOrRemoved;
-                    } else {
-                        left_roles[li] = Role::Changed;
-                        right_roles[ri] = Role::Changed;
-                        left_emphasis[li] = diff.left_spans;
-                        right_emphasis[ri] = diff.right_spans;
-                    }
-                }
-                for i in paired..old_len {
-                    left_roles[old_index + i] = Role::AddedOrRemoved;
-                }
-                for i in paired..new_len {
-                    right_roles[new_index + i] = Role::AddedOrRemoved;
+                let tokens = left_words[i - ln..i].iter().sum::<usize>()
+                    + right_words[j - rn..j].iter().sum::<usize>()
+                    + ln
+                    + rn;
+                work = work.saturating_add(tokens.saturating_mul(tokens));
+                if work > *remaining_work {
+                    return None;
                 }
             }
         }
     }
-    (left_roles, right_roles, left_emphasis, right_emphasis)
+    *remaining_work -= work;
+    let width = right.len() + 1;
+    let mut scores = vec![0i64; (left.len() + 1) * width];
+    let mut steps = vec![AlignmentStep::SkipLeft; scores.len()];
+    for step in &mut steps[1..width] {
+        *step = AlignmentStep::SkipRight;
+    }
+    for i in 1..=left.len() {
+        for j in 1..=right.len() {
+            let index = i * width + j;
+            scores[index] = scores[index - width];
+            if scores[index - 1] > scores[index] {
+                scores[index] = scores[index - 1];
+                steps[index] = AlignmentStep::SkipRight;
+            }
+            for (ln, rn) in [(1, 1), (1, 2), (2, 1)] {
+                if i < ln || j < rn || !candidate_allowed(&left[i - ln..i], &right[j - rn..j]) {
+                    continue;
+                }
+                let diff = block_diff(&left[i - ln..i], &right[j - rn..j]);
+                if diff.alignment_score <= 0 || diff.is_unrelated_pairing() {
+                    continue;
+                }
+                let score = scores[(i - ln) * width + j - rn] + diff.alignment_score;
+                // Strict comparison gives deterministic earliest matches;
+                // equal-score gaps cannot displace an existing match.
+                if score > scores[index] {
+                    scores[index] = score;
+                    steps[index] = AlignmentStep::Pair(ln, rn);
+                }
+            }
+        }
+    }
+    let mut pairs = Vec::new();
+    let (mut i, mut j) = (left.len(), right.len());
+    while i > 0 || j > 0 {
+        match steps[i * width + j] {
+            AlignmentStep::SkipLeft => i -= 1,
+            AlignmentStep::SkipRight => j -= 1,
+            AlignmentStep::Pair(ln, rn) => {
+                pairs.push(BlockPair {
+                    left: i - ln..i,
+                    right: j - rn..j,
+                });
+                i -= ln;
+                j -= rn;
+            }
+        }
+    }
+    pairs.reverse();
+    Some(pairs)
+}
+
+fn project_spans(spans: &[Range<usize>], lines: &[Range<usize>]) -> Vec<Vec<Range<usize>>> {
+    lines
+        .iter()
+        .map(|line| {
+            spans
+                .iter()
+                .filter_map(|span| {
+                    let start = span.start.max(line.start);
+                    let end = span.end.min(line.end);
+                    (start < end)
+                        .then_some(start.saturating_sub(line.start)..end.saturating_sub(line.start))
+                })
+                .collect()
+        })
+        .collect()
+}
+
+fn apply_pair(
+    left: &[DiffToken<'_>],
+    right: &[DiffToken<'_>],
+    lr: Range<usize>,
+    rr: Range<usize>,
+    output: &mut RolesAndEmphasis,
+) {
+    if lr.len() == 1 && rr.len() == 1 && left[lr.start] == right[rr.start] {
+        output.0[lr.start] = Role::Equal;
+        output.1[rr.start] = Role::Equal;
+        return;
+    }
+    let diff = block_diff(&left[lr.clone()], &right[rr.clone()]);
+    if diff.is_unrelated_pairing() {
+        return;
+    }
+    output.0[lr.clone()].fill(Role::Changed);
+    output.1[rr.clone()].fill(Role::Changed);
+    if lr.len() == 1 && rr.len() == 1 {
+        output.2[lr.start] = diff.left_spans;
+        output.3[rr.start] = diff.right_spans;
+    } else {
+        for (index, spans) in project_spans(&diff.left_spans, &block_text(&left[lr.clone()]).1)
+            .into_iter()
+            .enumerate()
+        {
+            output.2[lr.start + index] = spans;
+        }
+        for (index, spans) in project_spans(&diff.right_spans, &block_text(&right[rr.clone()]).1)
+            .into_iter()
+            .enumerate()
+        {
+            output.3[rr.start + index] = spans;
+        }
+    }
+}
+
+/// Cheap, collision-safe content overlap for the bounded fallback. This
+/// chooses a local shape only; the chosen pair still uses the exact word diff.
+fn content_overlap_score(left: &[u8], right: &[u8]) -> i64 {
+    let (left_tokens, _) = word_tokens(left);
+    let mut counts = ahash::AHashMap::<&[u8], usize>::with_capacity(left_tokens.len());
+    for token in left_tokens {
+        if meaningful_bytes(token) > 0 {
+            *counts.entry(token).or_default() += 1;
+        }
+    }
+    let (right_tokens, _) = word_tokens(right);
+    let mut matched = 0usize;
+    for token in right_tokens {
+        if let Some(count) = counts.get_mut(token)
+            && *count > 0
+        {
+            *count -= 1;
+            matched += meaningful_bytes(token);
+        }
+    }
+    10 * matched as i64 - 2 * (meaningful_bytes(left) + meaningful_bytes(right)) as i64
+}
+
+fn fallback_shape(
+    left: &[DiffToken<'_>],
+    right: &[DiffToken<'_>],
+    remaining_bytes: &mut usize,
+) -> (usize, usize) {
+    if left.len() == 1 && right.len() == 1 {
+        return (1, 1);
+    }
+    let mut best = (1, 1);
+    let mut best_score = i64::MIN;
+    for (ln, rn) in [(1, 1), (1, 2), (2, 1)] {
+        if left.len() < ln || right.len() < rn || !candidate_allowed(&left[..ln], &right[..rn]) {
+            continue;
+        }
+        let bytes = left[..ln]
+            .iter()
+            .chain(&right[..rn])
+            .map(|line| line.content.len() + 1)
+            .sum::<usize>();
+        // Each candidate is bounded independently, and all candidates share
+        // a linear per-job byte budget. Charge before allocating block text.
+        if bytes > MAX_ALIGNMENT_BYTES || bytes > *remaining_bytes {
+            if ln == 1 && rn == 1 {
+                return best;
+            }
+            continue;
+        }
+        *remaining_bytes -= bytes;
+        let score = content_overlap_score(&block_text(&left[..ln]).0, &block_text(&right[..rn]).0);
+        if ln == 1 && rn == 1 {
+            best_score = score;
+        } else if score > 0 && score > best_score {
+            best_score = score;
+            best = (ln, rn);
+        }
+    }
+    best
+}
+
+fn pair_positionally(
+    left: &[DiffToken<'_>],
+    right: &[DiffToken<'_>],
+    lr: Range<usize>,
+    rr: Range<usize>,
+    output: &mut RolesAndEmphasis,
+    remaining_lookahead_bytes: &mut usize,
+) {
+    let (mut i, mut j) = (lr.start, rr.start);
+    while i < lr.end && j < rr.end {
+        if is_blank(left[i]) && !is_blank(right[j]) {
+            i += 1;
+        } else if !is_blank(left[i]) && is_blank(right[j]) {
+            j += 1;
+        } else {
+            let (ln, rn) = fallback_shape(
+                &left[i..lr.end],
+                &right[j..rr.end],
+                remaining_lookahead_bytes,
+            );
+            apply_pair(left, right, i..i + ln, j..j + rn, output);
+            i += ln;
+            j += rn;
+        }
+    }
+}
+
+fn align_region(
+    left: &[DiffToken<'_>],
+    right: &[DiffToken<'_>],
+    lr: Range<usize>,
+    rr: Range<usize>,
+    output: &mut RolesAndEmphasis,
+    remaining_work: &mut usize,
+    remaining_lookahead_bytes: &mut usize,
+) {
+    if lr.is_empty() || rr.is_empty() {
+        return;
+    }
+    if left[lr.clone()] == right[rr.clone()] {
+        output.0[lr].fill(Role::Equal);
+        output.1[rr].fill(Role::Equal);
+        return;
+    }
+    // Most edit jobs consist of singleton replacements between exact lines.
+    // Preserve their direct word-diff path without a refinement allocation.
+    if lr.len() == 1 && rr.len() == 1 {
+        pair_positionally(left, right, lr, rr, output, remaining_lookahead_bytes);
+        return;
+    }
+    let Some(pairs) = refined_pairs(&left[lr.clone()], &right[rr.clone()], remaining_work) else {
+        pair_positionally(left, right, lr, rr, output, remaining_lookahead_bytes);
+        return;
+    };
+    let (mut i, mut j) = (lr.start, rr.start);
+    for pair in pairs {
+        let pl = lr.start + pair.left.start..lr.start + pair.left.end;
+        let pr = rr.start + pair.right.start..rr.start + pair.right.end;
+        pair_positionally(
+            left,
+            right,
+            i..pl.start,
+            j..pr.start,
+            output,
+            remaining_lookahead_bytes,
+        );
+        i = pl.end;
+        j = pr.end;
+        apply_pair(left, right, pl, pr, output);
+    }
+    pair_positionally(
+        left,
+        right,
+        i..lr.end,
+        j..rr.end,
+        output,
+        remaining_lookahead_bytes,
+    );
 }
 
 /// Word tokenization for inline emphasis.
@@ -244,6 +583,9 @@ struct PairedLineDiff {
     /// where `matched` is the total byte length of word-tokens that compare
     /// equal. 1.0 means byte-identical content.
     similarity: f32,
+    /// Positive only when shared word content exceeds 40%; whitespace and
+    /// punctuation cannot create a correspondence between unrelated blocks.
+    alignment_score: i64,
 }
 
 impl PairedLineDiff {
@@ -259,6 +601,12 @@ impl PairedLineDiff {
 
 fn is_word_token(t: &[u8]) -> bool {
     t.iter().any(u8::is_ascii_alphanumeric)
+}
+
+fn meaningful_bytes(text: &[u8]) -> usize {
+    text.iter()
+        .filter(|&&byte| byte.is_ascii_alphanumeric() || byte >= 128)
+        .count()
 }
 
 /// Operation-oriented word diff for a paired changed-line pair.
@@ -281,6 +629,7 @@ fn paired_line_diff(left_content: &[u8], right_content: &[u8]) -> PairedLineDiff
             left_words: 0,
             right_words: 0,
             similarity: 1.0,
+            alignment_score: 6 * meaningful_bytes(left_content) as i64,
         };
     }
     let (ltok, lranges) = word_tokens(left_content);
@@ -291,6 +640,7 @@ fn paired_line_diff(left_content: &[u8], right_content: &[u8]) -> PairedLineDiff
     let mut left_spans: Vec<Range<usize>> = Vec::new();
     let mut right_spans: Vec<Range<usize>> = Vec::new();
     let mut matched_bytes = 0usize;
+    let mut matched_content_bytes = 0usize;
     let push_contiguous = |spans: &mut Vec<Range<usize>>, start: usize, end: usize| {
         if end <= start {
             return;
@@ -308,6 +658,7 @@ fn paired_line_diff(left_content: &[u8], right_content: &[u8]) -> PairedLineDiff
             DiffOp::Equal { old_index, len, .. } => {
                 for tok in &ltok[old_index..old_index + len] {
                     matched_bytes += tok.len();
+                    matched_content_bytes += meaningful_bytes(tok);
                 }
             }
             DiffOp::Delete {
@@ -359,6 +710,8 @@ fn paired_line_diff(left_content: &[u8], right_content: &[u8]) -> PairedLineDiff
         left_words,
         right_words,
         similarity,
+        alignment_score: 10 * matched_content_bytes as i64
+            - 2 * (meaningful_bytes(left_content) + meaningful_bytes(right_content)) as i64,
     }
 }
 
@@ -665,14 +1018,23 @@ mod tests {
         assert_eq!(re[0], vec![0..5]);
     }
 
+    fn emphasized_text(text: &str, spans: &[Vec<Range<usize>>]) -> Vec<String> {
+        let segments = segment(text);
+        assert_eq!(segments.len(), spans.len());
+        segments
+            .iter()
+            .zip(spans)
+            .flat_map(|(line, ranges)| {
+                let content = &text[line.range.clone()];
+                ranges
+                    .iter()
+                    .map(move |range| content[range.clone()].to_owned())
+            })
+            .collect()
+    }
+
     #[test]
-    fn blank_line_anchor_mispairing_produces_no_stray_emphasis() {
-        // Regression: when one pane has an extra blank line, the line-level
-        // Myers diff anchors `Equal` on the blank and cross-pairs two
-        // unrelated paragraphs as a `Replace`. Word-diffing those unrelated
-        // lines yields scattered nonsense emphasis. The similarity guard must
-        // demote such a pair to `AddedOrRemoved` (line-level only), so no
-        // inline emphasis is emitted.
+    fn extra_blank_lines_preserve_both_paragraph_word_edits() {
         let pa =
             "The quarterly revenue report shows steady growth across every regional market segment";
         let pb = "My favorite weeknight recipe combines fresh basil ripe tomatoes minced garlic and olive oil";
@@ -680,18 +1042,213 @@ mod tests {
             "The quarterly revenue report shows steady growth across each regional market segment";
         let pb2 = "My favorite weeknight recipe blends fresh basil ripe tomatoes minced garlic and olive oil";
         let left = format!("{pa}\n\n{pb}");
-        // Leading blank line on the right is the anchor that mispairs the
-        // paragraphs (left para 2 with right para 1).
-        let right = format!("\n{pa2}\n\n{pb2}");
-        let (_, _, le, re) = roles_emph(&left, &right);
-        assert!(
-            le.iter().all(|v| v.is_empty()),
-            "left carried stray emphasis from an unrelated pairing: {le:?}"
+        for right in [
+            format!("\n{pa2}\n\n{pb2}"),
+            format!("{pa2}\n\n\n{pb2}"),
+            format!("{pa2}\n\n{pb2}\n\n"),
+        ] {
+            for (a, b, expected_a, expected_b) in [
+                (
+                    &left,
+                    &right,
+                    vec!["every", "combines"],
+                    vec!["each", "blends"],
+                ),
+                (
+                    &right,
+                    &left,
+                    vec!["each", "blends"],
+                    vec!["every", "combines"],
+                ),
+            ] {
+                let (_, _, le, re) = roles_emph(a, b);
+                assert_eq!(emphasized_text(a, &le), expected_a);
+                assert_eq!(emphasized_text(b, &re), expected_b);
+            }
+        }
+    }
+
+    #[test]
+    fn split_and_join_preserve_word_edits_without_emphasizing_continuations() {
+        let left = "Café deployment report includes approved changes, current risks, release dates and test results.\n\nThe migration guide describes recovery procedures for the production application.";
+        let right = "Café deployment report includes pending changes, current risks,\nrelease dates and test results.\n\nThe migration guide describes recovery procedures for the staging application.";
+        for (a, b, expected_a, expected_b) in [
+            (
+                left,
+                right,
+                vec!["approved", "production"],
+                vec!["pending", "staging"],
+            ),
+            (
+                right,
+                left,
+                vec!["pending", "staging"],
+                vec!["approved", "production"],
+            ),
+        ] {
+            let (_, _, le, re) = roles_emph(a, b);
+            let meaningful = |text: &str, spans: &[Vec<Range<usize>>]| {
+                emphasized_text(text, spans)
+                    .into_iter()
+                    .filter(|span| span.chars().any(char::is_alphanumeric))
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(meaningful(a, &le), expected_a);
+            assert_eq!(meaningful(b, &re), expected_b);
+        }
+    }
+
+    #[test]
+    fn split_and_join_at_an_accent_do_not_emphasize_unchanged_text() {
+        for replacement in ["new", "old"] {
+            let left = "Before café old value\nfooter";
+            let right = format!("Before café\n{replacement} value\nfooter");
+            for (a, b, ea, eb) in [
+                (left, right.as_str(), "old", replacement),
+                (right.as_str(), left, replacement, "old"),
+            ] {
+                let (_, _, le, re) = roles_emph(a, b);
+                let expected = |word: &str| {
+                    if replacement == "old" {
+                        Vec::<String>::new()
+                    } else {
+                        vec![word.to_owned()]
+                    }
+                };
+                assert_eq!(emphasized_text(a, &le), expected(ea));
+                assert_eq!(emphasized_text(b, &re), expected(eb));
+            }
+        }
+    }
+
+    #[test]
+    fn exhausted_alignment_budget_does_not_cascade_after_a_split_or_join() {
+        let left = (0..20).map(|i| format!("Section {i:02} records approved changes, current risks, release dates, test results, and the owner responsible for every follow-up action in the production application.")).collect::<Vec<_>>().join("\n\n");
+        let right = left.replace("approved", "pending").replacen(
+            "current risks, release dates",
+            "current risks,\nrelease dates",
+            1,
         );
+        for (a, b, expected_a, expected_b) in [
+            (&left, &right, "approved", "pending"),
+            (&right, &left, "pending", "approved"),
+        ] {
+            let la = tokenize(a);
+            let rb = tokenize(b);
+            let mut refinement_budget = MAX_ALIGNMENT_WORK;
+            assert!(refined_pairs(&la, &rb, &mut refinement_budget).is_none());
+            let mut output = (
+                vec![Role::AddedOrRemoved; la.len()],
+                vec![Role::AddedOrRemoved; rb.len()],
+                vec![Vec::new(); la.len()],
+                vec![Vec::new(); rb.len()],
+            );
+            let mut remaining_bytes = 4 * (a.len() + b.len());
+            align_region(
+                &la,
+                &rb,
+                0..la.len(),
+                0..rb.len(),
+                &mut output,
+                &mut 0,
+                &mut remaining_bytes,
+            );
+            assert_eq!(emphasized_text(a, &output.2), vec![expected_a; 20]);
+            assert_eq!(emphasized_text(b, &output.3), vec![expected_b; 20]);
+            assert!(
+                remaining_bytes > 0,
+                "fixed lookahead must stay within a linear byte budget"
+            );
+        }
+    }
+
+    #[test]
+    fn fallback_candidate_limits_are_checked_before_scoring() {
+        let left = tokenize("color red\ncolor blue");
+        let right = tokenize("color green\ncolor yellow");
+        assert_eq!(fallback_shape(&left, &right, &mut 0), (1, 1));
+        let long = "a".repeat(MAX_ALIGNMENT_BYTES + 1);
+        let large_left = tokenize(&long);
+        let mut budget = usize::MAX;
+        assert_eq!(fallback_shape(&large_left, &right, &mut budget), (1, 1));
+        assert_eq!(budget, usize::MAX);
+
+        // An extra punctuation-only line adds no meaningful content. Equal
+        // scores must preserve the singleton instead of swallowing it.
+        let same = tokenize("same content");
+        let inserted = tokenize("same content\n!!!");
+        assert_eq!(fallback_shape(&same, &inserted, &mut budget), (1, 1));
+        assert_eq!(fallback_shape(&inserted, &same, &mut budget), (1, 1));
+    }
+
+    #[test]
+    fn moved_line_does_not_steal_the_following_paragraph_pair() {
+        let left = "Shared heading\nOld review records\nBuild screenshots and test transcripts\nThe deployment record preserves financial security and operational acceptance evidence.";
+        let right = "Shared heading\nBuild screenshots and test transcripts\nOld review records\nThe deployment record preserves financial security and operational acceptance evidence, and identity.";
+        let (_, _, le, re) = roles_emph(left, right);
+        assert!(emphasized_text(left, &le).is_empty());
+        assert_eq!(emphasized_text(right, &re), vec![", and identity"]);
+    }
+
+    #[test]
+    fn unrelated_long_paragraphs_keep_line_only_changes() {
+        let left = "The engineering team documented network settings firewall rules service accounts deployment logs and database credentials for the production environment.";
+        let right = "A village bakery offered fresh bread seasonal pastries roasted coffee homemade jam and friendly conversation for travelers arriving early in the morning.";
+        let (lr, rr, le, re) = roles_emph(left, right);
+        assert_eq!(lr, vec![Role::AddedOrRemoved]);
+        assert_eq!(rr, vec![Role::AddedOrRemoved]);
+        assert!(emphasized_text(left, &le).is_empty());
+        assert!(emphasized_text(right, &re).is_empty());
+    }
+
+    #[test]
+    fn capped_alignment_still_skips_extra_blank_lines() {
+        let left = (0..70)
+            .map(|i| format!("Report {i} records approved changes\n"))
+            .collect::<String>();
+        let right = format!("\n{}", left.replace("approved", "pending"));
+        for (a, b) in [(&left, &right), (&right, &left)] {
+            let (_, _, le, re) = roles_emph(a, b);
+            assert_eq!(emphasized_text(a, &le).len(), 70);
+            assert_eq!(emphasized_text(b, &re).len(), 70);
+            assert!(
+                emphasized_text(a, &le)
+                    .iter()
+                    .all(|word| word == "approved" || word == "pending")
+            );
+            assert!(
+                emphasized_text(b, &re)
+                    .iter()
+                    .all(|word| word == "approved" || word == "pending")
+            );
+        }
+        let mut exhausted = 0;
         assert!(
-            re.iter().all(|v| v.is_empty()),
-            "right carried stray emphasis from an unrelated pairing: {re:?}"
+            refined_pairs(
+                &tokenize("alpha red\nbeta blue"),
+                &tokenize("alpha green\nbeta yellow"),
+                &mut exhausted
+            )
+            .is_none()
         );
+    }
+
+    #[test]
+    fn alignment_ties_are_deterministic_and_budget_is_shared() {
+        let left = tokenize("color red\ncolor red");
+        let right = tokenize("color blue\n");
+        let mut budget = MAX_ALIGNMENT_WORK;
+        let first = refined_pairs(&left, &right, &mut budget).unwrap();
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].left, 0..1);
+        let spent = MAX_ALIGNMENT_WORK - budget;
+        assert!(spent > 0);
+        for _ in 0..8 {
+            let repeated = refined_pairs(&left, &right, &mut budget).unwrap();
+            assert_eq!(repeated[0].left, first[0].left);
+            assert_eq!(repeated[0].right, first[0].right);
+        }
+        assert_eq!(budget, MAX_ALIGNMENT_WORK - 9 * spent);
     }
 
     #[test]

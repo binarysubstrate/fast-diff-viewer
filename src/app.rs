@@ -601,6 +601,9 @@ fn render_pane(
                             let mut te = TextEdit::multiline(buffer)
                                 .id_source(format!("{id_prefix}_edit"))
                                 .font(TextStyle::Monospace)
+                                // Keep the editor geometry from egui 0.33;
+                                // 0.37 otherwise inherits wider button padding.
+                                .margin(egui::Margin::symmetric(4, 2))
                                 .desired_width(f32::INFINITY)
                                 .desired_rows(24)
                                 .layouter(&mut layouter);
