@@ -256,7 +256,7 @@ Tradeoff:
 
 Owner: [`src/app.rs`](../src/app.rs)
 
-The app reads each pane's `ScrollAreaOutput.state.offset`, clamps the shared
+The app reads each pane's `ScrollAreaOutput.state.clamped_offset()`, clamps the shared
 offset to the opposite pane's previous max extent, and writes at most one new
 shared offset per frame.
 

@@ -2,7 +2,10 @@ use std::hash::{Hash, Hasher};
 use std::ops::Range;
 
 use ahash::AHasher;
-use eframe::egui::{Color32, FontId, TextFormat, text::LayoutJob};
+use eframe::egui::{
+    Color32, FontId, TextFormat,
+    text::{LayoutJob, LayoutSection},
+};
 
 use crate::buffer_stamp::BufferStamp;
 pub use crate::buffer_stamp::hash_text;
@@ -193,13 +196,20 @@ pub fn build_layout_job(
         // section, and feeding it the full buffer as one section is
         // ~3x slower than feeding it pre-split per-line sections on
         // large buffers. The visual output is identical.
+        // epaint 0.37's append merges adjacent identical formats, so add
+        // explicit sections to preserve these per-line layout boundaries.
+        job.text.push_str(text);
         for seg in &segs {
             let end = if seg.ends_with_newline {
                 seg.range.end + 1
             } else {
                 seg.range.end
             };
-            job.append(&text[seg.range.start..end], 0.0, neutral_fmt.clone());
+            job.sections.push(LayoutSection {
+                leading_space: 0.0,
+                byte_range: seg.range.start.into()..end.into(),
+                format: neutral_fmt.clone(),
+            });
         }
         return job;
     }
