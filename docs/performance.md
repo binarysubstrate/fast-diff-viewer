@@ -152,6 +152,18 @@ at most one in-flight job and one queued job:
 - When the in-flight result lands, the queued slot is promoted.
 - Results older than the last applied revision are dropped.
 
+When both buffers are below 200,000 bytes, `App` checks for edits immediately
+following the left editor and again after both editors. The first check lets
+left-side diff computation overlap right-pane rendering; comparing against the
+last submitted buffers prevents the second check from submitting duplicate
+work. Right-side edits are still detected by the final check. Results remain
+asynchronous and probes resolve only after matching styled paint.
+
+The early check is skipped when either buffer reaches the shared large-buffer
+threshold. Advancing both buffer stamps before the right pane renders would
+otherwise risk two large neutral layout rebuilds in one frame. Large buffers
+retain their previous dispatch order and staggered styled application.
+
 Why it is fast:
 
 - Typing bursts cannot enqueue an unbounded number of stale diff jobs.

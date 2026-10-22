@@ -36,7 +36,10 @@ diffing, pane-scoped coloring, synchronized scrolling, and no persisted state.
 
 1. Pane buffers live in [`src/app.rs`](../src/app.rs).
 2. `detect_and_dispatch()` compares the current buffers to the last submitted
-   buffers and submits diff work when either side changes.
+   buffers and submits diff work when either side changes. If both buffers are
+   below 200,000 bytes, it checks after the left editor returns so the worker
+   can run while the right pane renders. The final check after both editors
+   catches right-side edits; larger buffers use only that final check.
 3. [`src/pipeline.rs`](../src/pipeline.rs) runs a background worker on
    `std::thread`, coalescing edits to at most one in-flight job plus one
    queued job.

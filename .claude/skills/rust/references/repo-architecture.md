@@ -17,7 +17,7 @@
 ## Core Data Flow
 
 1. Pane buffers live in `src/app.rs` on `App`'s pane state.
-2. `detect_and_dispatch()` in `src/app.rs` compares the current buffers to the previous revision and submits work when either side changes.
+2. `detect_and_dispatch()` in `src/app.rs` compares the current buffers to the previous revision and submits work when either side changes. When both buffers are below the shared 200,000-byte stagger threshold, it runs after the left editor and again after both editors; larger buffers keep only the final check.
 3. `DiffPipeline` in `src/pipeline.rs` runs a background worker on `std::thread` and coalesces edits to at most one in-flight job and one queued job.
 4. `worker_loop()` tokenizes both buffers, computes roles and inline emphasis, stamps the exact source buffers, sends the newest result back, and requests repaint.
 5. `apply_diff_results()` in `src/app.rs` installs the newest revision and may defer the right pane by one frame through `PendingRightApply` for large buffers.

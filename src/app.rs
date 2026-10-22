@@ -16,6 +16,9 @@ use crate::render::{
 };
 use crate::theme::AppTheme;
 
+/// Larger buffers keep dispatch at frame end and stagger styled layout.
+const STAGGER_THRESHOLD_BYTES: usize = 200_000;
+
 /// Memoized layout result for a pane.
 ///
 /// Keyed by
@@ -222,6 +225,14 @@ impl App {
         }
     }
 
+    fn dispatch_before_right_pane(&mut self) {
+        if self.left.buffer.len() < STAGGER_THRESHOLD_BYTES
+            && self.right.buffer.len() < STAGGER_THRESHOLD_BYTES
+        {
+            self.detect_and_dispatch();
+        }
+    }
+
     fn detect_and_dispatch(&mut self) {
         if self.left.buffer != self.prev_left || self.right.buffer != self.prev_right {
             self.prev_left = self.left.buffer.clone();
@@ -244,8 +255,6 @@ impl App {
         // is empirical: 200 KB keeps edit_latency's 62 KB fixtures on
         // the fast path while sending large_paste's 310 KB case through
         // the staggered path.
-        const STAGGER_THRESHOLD_BYTES: usize = 200_000;
-
         // Drain any right-pane apply that was deferred last frame before
         // looking for a new result. Consuming it first preserves
         // latest-wins semantics when a newer result also lands this
@@ -377,6 +386,10 @@ impl eframe::App for App {
                 )
             })
             .inner;
+        // Overlap small-buffer diff work with right-pane rendering. Large
+        // buffers keep their existing order to avoid two neutral rebuilds
+        // in one frame; the final check also catches right-pane edits.
+        self.dispatch_before_right_pane();
         let (right_offset_out, right_max_offset) = egui::CentralPanel::default()
             .frame(pane_frame)
             .show(ui, |ui| {
@@ -1033,7 +1046,7 @@ fn bench_before_draw(app: &mut App, ctx: &egui::Context) {
                         id: state.next_probe_id,
                         // revision after the event will be rev_before + 1
                         // once detect_and_dispatch observes the buffer change
-                        // at end-of-update.
+                        // after the editor handles the event.
                         revision: rev_before + 1,
                         t0,
                         t1: None,
@@ -1203,12 +1216,180 @@ fn bench_after_draw(app: &mut App, ctx: &egui::Context, frame_entry: std::time::
 #[cfg(test)]
 mod tests {
     use super::{
-        clamp_sync_for_pane, decide_sync_write, layout_cache_key, pane_max_offset,
-        should_paint_gutter_markers,
+        App, Pane, STAGGER_THRESHOLD_BYTES, clamp_sync_for_pane, decide_sync_write,
+        layout_cache_key, pane_max_offset, should_paint_gutter_markers,
     };
     use crate::buffer_stamp::BufferStamp;
+    use crate::diff::{assign_roles_and_emphasis, tokenize};
+    use crate::pipeline::{DiffPipeline, DiffResult, Job};
     use crate::render::PaintIdentity;
+    use crate::theme::AppTheme;
     use eframe::egui;
+    use std::sync::mpsc::{self, Receiver, Sender};
+
+    fn dispatch_test_app() -> (App, Sender<DiffResult>, Receiver<Job>) {
+        let (job_tx, job_rx) = mpsc::channel();
+        let (result_tx, result_rx) = mpsc::channel();
+        let app = App {
+            theme: AppTheme::graphite(),
+            left: Pane::default(),
+            right: Pane::default(),
+            pipeline: DiffPipeline::from_channels(job_tx, result_rx),
+            prev_left: String::new(),
+            prev_right: String::new(),
+            sync_scroll_offset: egui::Vec2::ZERO,
+            left_max_offset: egui::Vec2::ZERO,
+            right_max_offset: egui::Vec2::ZERO,
+            last_painted_styled_revision: 0,
+            pending_right_apply: None,
+            #[cfg(feature = "bench")]
+            bench: None,
+        };
+        (app, result_tx, job_rx)
+    }
+
+    fn complete_job(result_tx: &Sender<DiffResult>, job: Job) {
+        let (left_roles, right_roles, left_inline_emphasis, right_inline_emphasis) =
+            assign_roles_and_emphasis(&tokenize(&job.left), &tokenize(&job.right));
+        result_tx
+            .send(DiffResult {
+                revision: job.revision,
+                left_stamp: BufferStamp::from_text(job.revision, &job.left),
+                right_stamp: BufferStamp::from_text(job.revision, &job.right),
+                left_roles,
+                right_roles,
+                left_inline_emphasis,
+                right_inline_emphasis,
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn left_edit_dispatches_once_across_both_frame_checks() {
+        let (mut app, _result_tx, job_rx) = dispatch_test_app();
+        app.left.buffer = "left edit".into();
+        app.dispatch_before_right_pane(); // After the left editor returns.
+        assert_eq!(app.pipeline.doc_revision, 1);
+        let job = job_rx.try_recv().unwrap();
+        assert_eq!((job.left.as_str(), job.right.as_str()), ("left edit", ""));
+        assert_eq!(
+            app.left.current_stamp,
+            BufferStamp::from_text(1, "left edit")
+        );
+        assert_eq!(app.right.current_stamp, BufferStamp::from_text(1, ""));
+
+        app.detect_and_dispatch(); // End of the same frame; right is unchanged.
+        assert_eq!(app.pipeline.doc_revision, 1);
+        assert_eq!(app.pipeline.in_flight_revision, Some(1));
+        assert_eq!(app.pipeline.queued_revision, None);
+        assert!(job_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn right_only_edit_dispatches_at_end_of_frame() {
+        let (mut app, _result_tx, job_rx) = dispatch_test_app();
+        app.dispatch_before_right_pane(); // The left editor made no change.
+        assert_eq!(app.pipeline.doc_revision, 0);
+        assert!(job_rx.try_recv().is_err());
+
+        app.right.buffer = "right edit".into();
+        app.detect_and_dispatch();
+        assert_eq!(app.pipeline.doc_revision, 1);
+        let job = job_rx.try_recv().unwrap();
+        assert_eq!((job.left.as_str(), job.right.as_str()), ("", "right edit"));
+        assert_eq!(app.left.current_stamp, BufferStamp::from_text(1, ""));
+        assert_eq!(
+            app.right.current_stamp,
+            BufferStamp::from_text(1, "right edit")
+        );
+        assert_eq!(app.pipeline.queued_revision, None);
+        assert!(job_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn edits_in_both_panes_keep_one_in_flight_and_latest_queued_buffers() {
+        let (mut app, result_tx, job_rx) = dispatch_test_app();
+        app.left.buffer = "left first".into();
+        app.dispatch_before_right_pane();
+        let first = job_rx.try_recv().unwrap();
+
+        app.right.buffer = "right edit".into();
+        app.detect_and_dispatch();
+        assert_eq!(app.pipeline.in_flight_revision, Some(1));
+        assert_eq!(app.pipeline.queued_revision, Some(2));
+        app.left.buffer = "left latest".into();
+        app.dispatch_before_right_pane();
+        app.detect_and_dispatch(); // Unchanged right editor must not add work.
+        assert_eq!(app.pipeline.doc_revision, 3);
+        assert_eq!(app.pipeline.in_flight_revision, Some(1));
+        assert_eq!(app.pipeline.queued_revision, Some(3));
+        assert!(job_rx.try_recv().is_err());
+
+        complete_job(&result_tx, first);
+        app.apply_diff_results();
+        let latest = job_rx.try_recv().unwrap();
+        assert_eq!(latest.revision, 3);
+        assert_eq!(
+            (latest.left.as_str(), latest.right.as_str()),
+            ("left latest", "right edit")
+        );
+        assert_eq!(app.pipeline.in_flight_revision, Some(3));
+        assert_eq!(app.pipeline.queued_revision, None);
+        assert_ne!(app.left.applied_stamp, app.left.current_stamp);
+        assert_ne!(app.right.applied_stamp, app.right.current_stamp);
+        assert!(job_rx.try_recv().is_err());
+
+        complete_job(&result_tx, latest);
+        app.apply_diff_results();
+        assert_eq!(app.pipeline.in_flight_revision, None);
+        assert_eq!(app.pipeline.queued_revision, None);
+        assert_eq!(app.pipeline.last_applied_revision, 3);
+        assert_eq!(app.left.applied_stamp, app.left.current_stamp);
+        assert_eq!(app.right.applied_stamp, app.right.current_stamp);
+    }
+
+    #[test]
+    fn large_left_buffer_defers_dispatch_until_end_of_frame() {
+        let (mut app, _result_tx, job_rx) = dispatch_test_app();
+        app.left.buffer = "x".repeat(STAGGER_THRESHOLD_BYTES);
+        app.dispatch_before_right_pane();
+        assert_eq!(app.pipeline.doc_revision, 0);
+        assert_eq!(app.left.current_stamp, BufferStamp::default());
+        assert_eq!(app.right.current_stamp, BufferStamp::default());
+        assert!(job_rx.try_recv().is_err());
+
+        app.detect_and_dispatch();
+        let job = job_rx.try_recv().unwrap();
+        assert_eq!(job.revision, 1);
+        assert_eq!(job.left, app.left.buffer);
+        assert_eq!(
+            app.left.current_stamp,
+            BufferStamp::from_text(1, &app.left.buffer)
+        );
+        assert_eq!(app.right.current_stamp, BufferStamp::from_text(1, ""));
+    }
+
+    #[test]
+    fn large_right_buffer_defers_left_edit_dispatch_until_end_of_frame() {
+        let (mut app, _result_tx, job_rx) = dispatch_test_app();
+        app.left.buffer = "left edit".into();
+        app.right.buffer = "x".repeat(STAGGER_THRESHOLD_BYTES);
+        app.dispatch_before_right_pane();
+        assert_eq!(app.pipeline.doc_revision, 0);
+        assert_eq!(app.left.current_stamp, BufferStamp::default());
+        assert_eq!(app.right.current_stamp, BufferStamp::default());
+        assert!(job_rx.try_recv().is_err());
+
+        app.detect_and_dispatch();
+        let job = job_rx.try_recv().unwrap();
+        assert_eq!(job.revision, 1);
+        assert_eq!(job.left, "left edit");
+        assert_eq!(job.right, app.right.buffer);
+        assert_eq!(
+            app.right.current_stamp,
+            BufferStamp::from_text(1, &app.right.buffer)
+        );
+    }
 
     #[test]
     fn no_change_returns_none() {

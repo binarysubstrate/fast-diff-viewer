@@ -96,7 +96,7 @@ impl DiffPipeline {
     }
 
     #[cfg(test)]
-    fn from_channels(tx: Sender<Job>, rx: Receiver<DiffResult>) -> Self {
+    pub(crate) fn from_channels(tx: Sender<Job>, rx: Receiver<DiffResult>) -> Self {
         Self::from_parts(tx, rx, None)
     }
 
