@@ -5,6 +5,8 @@ or rendered diff output. Automated role/span and render tests complement a
 native visual review; a successful capture command alone is not design
 signoff.
 
+Capture record: [v1.1.1 before/after examples](visual-validation/2026-10-22-v1.1.1/README.md).
+
 ## Acceptance Criteria
 
 - A related changed line has the pane's line tint, with a stronger inline
