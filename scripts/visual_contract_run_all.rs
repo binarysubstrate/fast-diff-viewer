@@ -202,6 +202,26 @@ const CASES: &[CaseDef] = &[
         left: "The engineering team documented network settings, firewall rules, service accounts, deployment logs, and database credentials needed for the production environment.",
         right: "A village bakery offered fresh bread, seasonal pastries, roasted coffee, homemade jam, and friendly conversation for travelers arriving early in the morning.",
     },
+    CaseDef {
+        id: "G7",
+        left: "Before café old value\nfooter",
+        right: "Before café\nnew value\nfooter",
+    },
+    CaseDef {
+        id: "G8",
+        left: "Before café\nold value\nfooter",
+        right: "Before café new value\nfooter",
+    },
+    CaseDef {
+        id: "G9",
+        left: include_str!("../tests/fixtures/diff/paragraphs-before.txt"),
+        right: include_str!("../tests/fixtures/diff/paragraphs-split-after.txt"),
+    },
+    CaseDef {
+        id: "G10",
+        left: include_str!("../tests/fixtures/diff/paragraphs-split-after.txt"),
+        right: include_str!("../tests/fixtures/diff/paragraphs-before.txt"),
+    },
 ];
 
 #[derive(Debug)]

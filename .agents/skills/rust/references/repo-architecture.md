@@ -49,8 +49,9 @@
 - CRLF normalization is compare-only and must not change segmentation counts.
 - UTF-8 byte safety matters in inline-emphasis token boundaries.
 - Blank-only matches are weak anchors; related paragraphs must keep their line and word tints across added or removed blank lines.
-- Split/join comparison text is temporary. Project emphasis back to original content ranges; never paint synthetic separators or rewrite pane buffers.
-- Alignment is capped at 64 lines per side and 16 KiB combined content per region, with a 262,144-unit estimated candidate-work budget shared by the job. The fallback skips unmatched blanks and retains the unrelated-line guard.
+- Split/join comparison text uses a temporary ASCII space between lines. Project emphasis back to original content ranges; never paint synthetic separators, falsely emphasize unchanged accented boundary text, or rewrite pane buffers.
+- Alignment is capped at 64 lines per side and 16 KiB combined content per region, with a 262,144-unit estimated candidate-work budget shared by the job.
+- The fallback skips unmatched blanks and compares adjacent one-to-one / one-to-two / two-to-one shapes using collision-safe token overlap. A split/join must score positively and beat one-to-one; candidates are capped at 16 KiB and share a per-job byte budget of four times combined content-plus-separator size. Rejected scoring retains positional pairing; chosen pairs retain exact word diffing and the unrelated-line guard.
 
 ### Styled rendering
 

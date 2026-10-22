@@ -92,8 +92,18 @@ the substantial-line similarity guard described below.
 Selected related pairs become `Changed`, with the pane's line tint and word
 emphasis. Exact one-to-one pairs become `Equal`; unrelated substantial pairs
 and excess lines remain `AddedOrRemoved`, with line tint only. Residual lines
-are paired positionally while skipping unmatched blank lines. This also
-preserves ordinary short-line edits that share no complete word token.
+use a bounded local fallback that skips unmatched blank lines and considers
+only adjacent one-to-one, one-to-two, and two-to-one shapes. Collision-safe
+word-token multiset overlap selects a split or join only when its content
+score is positive and strictly better than the one-to-one score. Ties with
+one-to-one keep that pairing. This avoids shifting subsequent paragraphs after a single
+hard wrap when the larger alignment search exceeds its budget.
+
+Fallback scoring does not run additional Myers diffs. The selected pair still
+uses the exact word diff and substantial-line guard. When scoring is too
+large or its budget is exhausted, the fallback keeps blank-skipping
+positional pairing, including ordinary short-line edits that share no
+complete word token.
 
 Why it is fast:
 
@@ -105,8 +115,10 @@ Why it is fast:
 - Refinement is limited to 64 lines per side and 16 KiB of combined content
   per region. Candidate word comparisons share an estimated work budget of
   262,144 units across the entire job, checked before a region is refined.
-- Regions outside those limits use guarded positional pairing with unmatched
-  blank lines skipped. A region with an empty side needs no word diff.
+- Local fallback candidates are capped at 16 KiB each and share a per-job
+  byte budget of four times the combined content-plus-separator size. Size
+  and budget checks happen before candidate concatenation or tokenization.
+  A region with an empty side needs no word diff.
 
 Tradeoff:
 
@@ -117,8 +129,10 @@ Tradeoff:
   job's line count. They are discarded when the line diff completes; no
   cross-job cache retains earlier buffers.
 - Content alignment allocates a bounded score table and comparison-only text
-  for split/join candidates. Larger or more expensive regions retain the
-  positional fallback rather than searching without a limit.
+  for split/join candidates. The local fallback uses token counts rather
+  than a global alignment table. Reflow beyond one-to-two or two-to-one
+  lines, oversized candidates, and exhausted budgets may retain line-level
+  differences; there is no unbounded reflow search.
 
 ## Inline Emphasis
 
@@ -140,8 +154,10 @@ Short lines retain ordinary word diffing, so one-word edits still receive
 inline emphasis. This guard remains separate from the content score used to
 choose alignment candidates.
 
-For a split or join, `block_text()` joins the candidate lines with synthetic
-newlines for comparison only. `project_spans()` maps the resulting emphasis
+For a split or join, `block_text()` joins the candidate lines with one
+synthetic ASCII space for comparison only. Treating a hard wrap as a word
+separator avoids false emphasis on unchanged accented text next to the
+boundary. `project_spans()` maps the resulting emphasis
 back into each original line's content range and excludes those synthetic
 separators. Buffer text, canonical segmentation, and CRLF normalization are
 unchanged. Related split/join lines retain line tint while unchanged words

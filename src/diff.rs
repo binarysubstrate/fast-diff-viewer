@@ -122,6 +122,13 @@ pub fn assign_roles_and_emphasis(
         vec![Vec::new(); right.len()],
     );
     let mut remaining_work = MAX_ALIGNMENT_WORK;
+    let mut remaining_lookahead_bytes = left
+        .iter()
+        .chain(right)
+        .fold(0usize, |total, line| {
+            total.saturating_add(line.content.len().saturating_add(1))
+        })
+        .saturating_mul(4);
     let mut left_start = 0;
     let mut right_start = 0;
     for op in capture_line_diff(left, right) {
@@ -146,6 +153,7 @@ pub fn assign_roles_and_emphasis(
                     right_start..ri,
                     &mut output,
                     &mut remaining_work,
+                    &mut remaining_lookahead_bytes,
                 );
                 output.0[li] = Role::Equal;
                 output.1[ri] = Role::Equal;
@@ -161,6 +169,7 @@ pub fn assign_roles_and_emphasis(
         right_start..right.len(),
         &mut output,
         &mut remaining_work,
+        &mut remaining_lookahead_bytes,
     );
     output
 }
@@ -194,7 +203,10 @@ fn block_text(lines: &[DiffToken<'_>]) -> (Vec<u8>, Vec<Range<usize>>) {
     let mut ranges = Vec::with_capacity(lines.len());
     for (index, line) in lines.iter().enumerate() {
         if index > 0 {
-            text.push(b'\n');
+            // A hard wrap stands for a word separator during comparison.
+            // Using a newline here would attach it to adjacent non-ASCII
+            // runs and falsely emphasize an unchanged accent or CJK text.
+            text.push(b' ');
         }
         let start = text.len();
         text.extend_from_slice(line.content);
@@ -368,12 +380,75 @@ fn apply_pair(
     }
 }
 
+/// Cheap, collision-safe content overlap for the bounded fallback. This
+/// chooses a local shape only; the chosen pair still uses the exact word diff.
+fn content_overlap_score(left: &[u8], right: &[u8]) -> i64 {
+    let (left_tokens, _) = word_tokens(left);
+    let mut counts = ahash::AHashMap::<&[u8], usize>::with_capacity(left_tokens.len());
+    for token in left_tokens {
+        if meaningful_bytes(token) > 0 {
+            *counts.entry(token).or_default() += 1;
+        }
+    }
+    let (right_tokens, _) = word_tokens(right);
+    let mut matched = 0usize;
+    for token in right_tokens {
+        if let Some(count) = counts.get_mut(token)
+            && *count > 0
+        {
+            *count -= 1;
+            matched += meaningful_bytes(token);
+        }
+    }
+    10 * matched as i64 - 2 * (meaningful_bytes(left) + meaningful_bytes(right)) as i64
+}
+
+fn fallback_shape(
+    left: &[DiffToken<'_>],
+    right: &[DiffToken<'_>],
+    remaining_bytes: &mut usize,
+) -> (usize, usize) {
+    if left.len() == 1 && right.len() == 1 {
+        return (1, 1);
+    }
+    let mut best = (1, 1);
+    let mut best_score = i64::MIN;
+    for (ln, rn) in [(1, 1), (1, 2), (2, 1)] {
+        if left.len() < ln || right.len() < rn || !candidate_allowed(&left[..ln], &right[..rn]) {
+            continue;
+        }
+        let bytes = left[..ln]
+            .iter()
+            .chain(&right[..rn])
+            .map(|line| line.content.len() + 1)
+            .sum::<usize>();
+        // Each candidate is bounded independently, and all candidates share
+        // a linear per-job byte budget. Charge before allocating block text.
+        if bytes > MAX_ALIGNMENT_BYTES || bytes > *remaining_bytes {
+            if ln == 1 && rn == 1 {
+                return best;
+            }
+            continue;
+        }
+        *remaining_bytes -= bytes;
+        let score = content_overlap_score(&block_text(&left[..ln]).0, &block_text(&right[..rn]).0);
+        if ln == 1 && rn == 1 {
+            best_score = score;
+        } else if score > 0 && score > best_score {
+            best_score = score;
+            best = (ln, rn);
+        }
+    }
+    best
+}
+
 fn pair_positionally(
     left: &[DiffToken<'_>],
     right: &[DiffToken<'_>],
     lr: Range<usize>,
     rr: Range<usize>,
     output: &mut RolesAndEmphasis,
+    remaining_lookahead_bytes: &mut usize,
 ) {
     let (mut i, mut j) = (lr.start, rr.start);
     while i < lr.end && j < rr.end {
@@ -382,9 +457,14 @@ fn pair_positionally(
         } else if !is_blank(left[i]) && is_blank(right[j]) {
             j += 1;
         } else {
-            apply_pair(left, right, i..i + 1, j..j + 1, output);
-            i += 1;
-            j += 1;
+            let (ln, rn) = fallback_shape(
+                &left[i..lr.end],
+                &right[j..rr.end],
+                remaining_lookahead_bytes,
+            );
+            apply_pair(left, right, i..i + ln, j..j + rn, output);
+            i += ln;
+            j += rn;
         }
     }
 }
@@ -396,6 +476,7 @@ fn align_region(
     rr: Range<usize>,
     output: &mut RolesAndEmphasis,
     remaining_work: &mut usize,
+    remaining_lookahead_bytes: &mut usize,
 ) {
     if lr.is_empty() || rr.is_empty() {
         return;
@@ -408,23 +489,37 @@ fn align_region(
     // Most edit jobs consist of singleton replacements between exact lines.
     // Preserve their direct word-diff path without a refinement allocation.
     if lr.len() == 1 && rr.len() == 1 {
-        pair_positionally(left, right, lr, rr, output);
+        pair_positionally(left, right, lr, rr, output, remaining_lookahead_bytes);
         return;
     }
     let Some(pairs) = refined_pairs(&left[lr.clone()], &right[rr.clone()], remaining_work) else {
-        pair_positionally(left, right, lr, rr, output);
+        pair_positionally(left, right, lr, rr, output, remaining_lookahead_bytes);
         return;
     };
     let (mut i, mut j) = (lr.start, rr.start);
     for pair in pairs {
         let pl = lr.start + pair.left.start..lr.start + pair.left.end;
         let pr = rr.start + pair.right.start..rr.start + pair.right.end;
-        pair_positionally(left, right, i..pl.start, j..pr.start, output);
+        pair_positionally(
+            left,
+            right,
+            i..pl.start,
+            j..pr.start,
+            output,
+            remaining_lookahead_bytes,
+        );
         i = pl.end;
         j = pr.end;
         apply_pair(left, right, pl, pr, output);
     }
-    pair_positionally(left, right, i..lr.end, j..rr.end, output);
+    pair_positionally(
+        left,
+        right,
+        i..lr.end,
+        j..rr.end,
+        output,
+        remaining_lookahead_bytes,
+    );
 }
 
 /// Word tokenization for inline emphasis.
@@ -1001,6 +1096,89 @@ mod tests {
             assert_eq!(meaningful(a, &le), expected_a);
             assert_eq!(meaningful(b, &re), expected_b);
         }
+    }
+
+    #[test]
+    fn split_and_join_at_an_accent_do_not_emphasize_unchanged_text() {
+        for replacement in ["new", "old"] {
+            let left = "Before café old value\nfooter";
+            let right = format!("Before café\n{replacement} value\nfooter");
+            for (a, b, ea, eb) in [
+                (left, right.as_str(), "old", replacement),
+                (right.as_str(), left, replacement, "old"),
+            ] {
+                let (_, _, le, re) = roles_emph(a, b);
+                let expected = |word: &str| {
+                    if replacement == "old" {
+                        Vec::<String>::new()
+                    } else {
+                        vec![word.to_owned()]
+                    }
+                };
+                assert_eq!(emphasized_text(a, &le), expected(ea));
+                assert_eq!(emphasized_text(b, &re), expected(eb));
+            }
+        }
+    }
+
+    #[test]
+    fn exhausted_alignment_budget_does_not_cascade_after_a_split_or_join() {
+        let left = (0..20).map(|i| format!("Section {i:02} records approved changes, current risks, release dates, test results, and the owner responsible for every follow-up action in the production application.")).collect::<Vec<_>>().join("\n\n");
+        let right = left.replace("approved", "pending").replacen(
+            "current risks, release dates",
+            "current risks,\nrelease dates",
+            1,
+        );
+        for (a, b, expected_a, expected_b) in [
+            (&left, &right, "approved", "pending"),
+            (&right, &left, "pending", "approved"),
+        ] {
+            let la = tokenize(a);
+            let rb = tokenize(b);
+            let mut refinement_budget = MAX_ALIGNMENT_WORK;
+            assert!(refined_pairs(&la, &rb, &mut refinement_budget).is_none());
+            let mut output = (
+                vec![Role::AddedOrRemoved; la.len()],
+                vec![Role::AddedOrRemoved; rb.len()],
+                vec![Vec::new(); la.len()],
+                vec![Vec::new(); rb.len()],
+            );
+            let mut remaining_bytes = 4 * (a.len() + b.len());
+            align_region(
+                &la,
+                &rb,
+                0..la.len(),
+                0..rb.len(),
+                &mut output,
+                &mut 0,
+                &mut remaining_bytes,
+            );
+            assert_eq!(emphasized_text(a, &output.2), vec![expected_a; 20]);
+            assert_eq!(emphasized_text(b, &output.3), vec![expected_b; 20]);
+            assert!(
+                remaining_bytes > 0,
+                "fixed lookahead must stay within a linear byte budget"
+            );
+        }
+    }
+
+    #[test]
+    fn fallback_candidate_limits_are_checked_before_scoring() {
+        let left = tokenize("color red\ncolor blue");
+        let right = tokenize("color green\ncolor yellow");
+        assert_eq!(fallback_shape(&left, &right, &mut 0), (1, 1));
+        let long = "a".repeat(MAX_ALIGNMENT_BYTES + 1);
+        let large_left = tokenize(&long);
+        let mut budget = usize::MAX;
+        assert_eq!(fallback_shape(&large_left, &right, &mut budget), (1, 1));
+        assert_eq!(budget, usize::MAX);
+
+        // An extra punctuation-only line adds no meaningful content. Equal
+        // scores must preserve the singleton instead of swallowing it.
+        let same = tokenize("same content");
+        let inserted = tokenize("same content\n!!!");
+        assert_eq!(fallback_shape(&same, &inserted, &mut budget), (1, 1));
+        assert_eq!(fallback_shape(&inserted, &same, &mut budget), (1, 1));
     }
 
     #[test]
