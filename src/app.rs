@@ -24,12 +24,12 @@ use crate::theme::AppTheme;
 /// produced the applied roles/emphasis; `paint_hash` captures theme-relevant
 /// format colors, and `wrap_width` comes from egui's layouter input and
 /// changes the resulting `Galley` even when the text is unchanged. A miss
-/// rebuilds the `LayoutJob` and re-runs font layout; hits reuse the cached
-/// `Galley`.
+/// rebuilds the `LayoutJob` and re-runs font layout; hits submit the cached
+/// job to egui's memoized font layout so its paragraph cache stays alive.
 /// `is_styled` records whether the cached paint took the styled path (vs. the
 /// neutral fallback); on a cache hit the layouter re-reports the same value so
-/// the bench harness's `painted_styled_this_frame` flag is correct even when no
-/// layout work happens.
+/// the bench harness's `painted_styled_this_frame` flag is correct when cached
+/// paint is reused.
 type LayoutCacheKey = (PaintIdentity, u64, u64, u64, u32);
 
 struct LayoutCache {
@@ -498,7 +498,10 @@ fn render_pane(
                 && cache.key == key
             {
                 painted_styled_for_gutter.set(cache.is_styled);
-                return cache.galley.clone();
+                // egui evicts galleys not used in the preceding pass, even if
+                // we retain an Arc. Re-submit the job to keep its paragraph
+                // cache alive, so the next edit only reshapes changed lines.
+                return ui.fonts_mut(|fonts| fonts.layout_job((*cache.galley.job).clone()));
             }
             let is_styled = is_styled_paint_valid(text, line_roles, inline_emphasis, identity);
             let mut job: LayoutJob = build_layout_job(

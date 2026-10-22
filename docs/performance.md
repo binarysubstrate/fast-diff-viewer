@@ -224,7 +224,12 @@ Each pane memoizes one `Galley`. The cache key includes:
 
 Why it is fast:
 
-- Unchanged frames reuse the previous `Arc<Galley>`.
+- Unchanged frames submit the cached layout job to egui's memoized font
+  layout, which normally returns the existing `Arc<Galley>` and marks its
+  paragraph entries as used. egui evicts entries not used in the preceding
+  pass, regardless of whether the app still owns a galley. Keeping those
+  entries alive lets the next edit reuse unchanged paragraphs instead of
+  shaping the entire buffer again.
 - The cache key includes every input that changes text layout or paint formats,
   so hits are cheap without risking stale styled paint.
 
@@ -232,6 +237,9 @@ Tradeoff:
 
 - The cache stores only one galley per pane. That matches the app's steady
   state and avoids an unbounded layout cache.
+- Each cache hit clones and hashes the layout job and touches egui's cached
+  paragraphs. This keeps the displayed text's paragraph galleys alive in
+  egui; a font or atlas reset can still require layout again.
 
 ## Large-Buffer Stagger
 
